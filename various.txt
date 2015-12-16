@@ -1,0 +1,642 @@
+Public Function CheckFileExist(FullPath As String, Optional msgERR As Boolean = False) As Boolean
+
+Dim Fso As FileSystemObject
+Set Fso = CreateObject("Scripting.FileSystemObject")
+
+    If Fso.FileExists(FullPath) = False Then
+        
+        CheckFileExist = False
+        
+        If msgERR Then
+            
+            If FullPath = "" Then
+            
+            Err.Raise vbObjectError + 1, Description:="Path Empty", Source:="CheckFileExist"
+            
+            Else
+            
+            Err.Raise vbObjectError + 1, Description:="The file :" & vbNewLine & _
+                                                        GetFileName(FullPath) & vbNewLine & _
+                                                        "is not available in the folder : " & vbNewLine & _
+                                                        GetFolderName(FullPath) & vbNewLine & _
+                                                        "Check both path and name, check also if you have access to them.", _
+                                                        Source:="CheckFichierExist"
+            End If
+            
+        End If
+        
+    Else
+        
+        CheckFileExist = True
+    End If
+    
+End Function
+Public Function GetFolderName(FullPath As String) As String
+    GetFolderName = Split(FullPath, "\" & Split(FullPath, "\")(UBound(Split(FullPath, "\"))))(0)
+End Function
+
+Public Function GetFileName(FullPath As String) As String
+    GetFileName = Split(FullPath, "\")(UBound(Split(FullPath, "\")))
+End Function
+Public Function CheckFolderExist(FullPath As String, Optional msgERR As Boolean = False) As Boolean
+
+Dim Fso As FileSystemObject
+Set Fso = CreateObject("Scripting.FileSystemObject")
+
+    If Fso.FolderExists(FullPath) = False Then
+        
+        CheckFolderExist = False
+        
+        If msgERR Then
+            
+            Err.Raise vbObjectError + 1, Description:="The folder :" & vbNewLine & _
+                                                        FullPath & vbNewLine & _
+                                                        "is not available." & vbNewLine & _
+                                                        "Check the path, check also if you have access to it.", _
+                                                        Source:="CheckFolderExist"
+        End If
+        
+    Else
+        
+        CheckFolderExist = True
+    End If
+    
+End Function
+
+'******* M_Import ******
+Public Function Import_Data_Report_MCA(iColumnSpec As Integer, sTableToUpdate As String, sNameRangeTable As String)
+    Dim MySpec              As ReaderSpec
+    Dim FeederSpec          As AdoFeederSpec
+    Dim Vkey                As Variant
+    Dim dico_entete         As New Dictionary
+    Dim WkMacro             As Workbook
+    Dim wkbkb               As Workbook
+    Dim bd                  As Database
+    Dim i                   As Integer
+    Dim iRefImport          As Integer
+    Dim iNbRows             As Integer
+    Dim iNbColumns          As Integer
+    
+    Set MySpec = New ReaderSpec
+    Set FeederSpec = New AdoFeederSpec
+    Set WkMacro = ThisWorkbook
+    
+    'Mise à jour des log
+    Application.ScreenUpdating = True
+    Select Case iColumnSpec
+        Case 3
+            Log.Info "Création de la Spec d'import pour l'import de l'onglet Data N-1"
+            iRefImport = iColumnSpec
+        Case 0
+            Log.Info "Création de la Spec d'import pour l'import de l'onglet Data"
+            iRefImport = iColumnSpec
+        Case 5
+            Log.Info "Création de la Spec d'import pour l'import de l'onglet Data"
+            iRefImport = 3 'La spec d'import correspond à la spec de DataN-1 mais les données se trouvent dans l'onglet Data pas dans onglet Data N-1
+        Case 6
+            Log.Info "Création de la Spec d'import pour l'import de transco Area"
+            iRefImport = iColumnSpec 'Import de la table de transco
+
+    End Select
+    Application.ScreenUpdating = False
+    
+    i = 1
+    
+    Do While WsParam.[Spec_rng].Offset(i, iRefImport) <> ""
+        If Not dico_entete.Exists(WsParam.[Spec_rng].Offset(i, iRefImport).Value2) Then
+            dico_entete.Add WsParam.[Spec_rng].Offset(i, iRefImport).Value2, WsParam.[Spec_rng].Offset(i, iRefImport + 1).Value2
+        End If
+    i = i + 1
+    Loop
+    
+    For Each Vkey In dico_entete.Keys
+            Select Case dico_entete(Vkey)
+                'MySpec.Ordered = False
+                Case "Text", "TEXT"
+                    MySpec.Add ReaderSpecItemType_String, Vkey
+                    FeederSpec.Add Vkey, adVarWChar, , nullable:=True
+                    'Mapper.Add
+                Case "Number", "NUMBER"
+                    MySpec.Add ReaderSpecItemType_Double, Vkey
+                    FeederSpec.Add Vkey, adDouble, nullable:=True
+                Case "Date", "DATE"
+                    MySpec.Add ReaderSpecItemType_DateTime, Vkey
+                    FeederSpec.Add Vkey, adDate, nullable:=True
+            End Select
+    Next
+    
+    'Alimentation de la table Data N-1
+    
+    
+    'Import
+    Select Case iColumnSpec
+        Case 3 'Data N-1
+                Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+                bd.Execute "DELETE * FROM " & sTableToUpdate
+                CDOTb.DataManager.RangeToAccess WsDataN_1.ListObjects(sNameRangeTable).Range, MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+        Case 6
+                Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+                bd.Execute "DELETE * FROM " & sTableToUpdate
+                WkMacro.Activate
+                CDOTb.DataManager.RangeToAccess WsTransco.ListObjects(sNameRangeTable).Range, MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+        
+        Case 5 'Data pour Stats
+                Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+                bd.Execute "DELETE * FROM " & sTableToUpdate
+                        If WsData.FilterMode = True Then WsData.ShowAllData
+                CDOTb.DataManager.RangeToAccess WsData.ListObjects(sNameRangeTable).Range, MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+        
+        Case 0
+                Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+                bd.Execute "DELETE * FROM " & sTableToUpdate
+                     
+                Set wkbkb = Application.Workbooks.Open(WsSettings.[path_Input_Folder].Offset(0, 1).Value)
+                 
+                wkbkb.Sheets("Deals&Conf").Range("A1").Select
+                iNbRows = wkbkb.Sheets(1).Range(Selection, Selection.End(xlDown)).Rows.Count
+                Range("A1").Select
+                iNbColumns = wkbkb.Sheets(1).Range(Selection, Selection.End(xlToRight)).Columns.Count
+                
+                CDOTb.DataManager.RangeToAccess wkbkb.Sheets(1).Range(Cells(1, 1), Cells(iNbRows, iNbColumns)), MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+                 
+                wkbkb.Close False
+    End Select
+        
+End Function
+Public Function Import_Top_30()
+    Dim MySpec As ReaderSpec
+    Dim FeederSpec As AdoFeederSpec
+    Dim Vkey As Variant
+    Dim dico_entete As New Dictionary
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    Dim i As Integer
+    Dim sTableToUpdate As String
+    Dim sNameRangeTable As String
+    
+    Set MySpec = New ReaderSpec
+    Set FeederSpec = New AdoFeederSpec
+    Set WkMacro = ThisWorkbook
+    
+    Application.ScreenUpdating = False
+    Set dico_entete = Nothing
+    
+    i = 1
+    Do While WsParam.[Spec_rng].Offset(i, 24) <> ""
+        If Not dico_entete.Exists(WsParam.[Spec_rng].Offset(i, 24).Value2) Then
+            dico_entete.Add WsParam.[Spec_rng].Offset(i, 24).Value2, WsParam.[Spec_rng].Offset(i, 24 + 1).Value2
+        End If
+    i = i + 1
+    Loop
+    
+    For Each Vkey In dico_entete.Keys
+            Select Case dico_entete(Vkey)
+                'MySpec.Ordered = False
+                Case "Text", "TEXT"
+                    MySpec.Add ReaderSpecItemType_String, Vkey
+                    FeederSpec.Add Vkey, adVarWChar, , nullable:=True
+                    'Mapper.Add
+                Case "Number", "NUMBER"
+                    MySpec.Add ReaderSpecItemType_Double, Vkey
+                    FeederSpec.Add Vkey, adDouble, nullable:=True
+                Case "Date", "DATE"
+                    MySpec.Add ReaderSpecItemType_DateTime, Vkey
+                    FeederSpec.Add Vkey, adDate, nullable:=True
+            End Select
+    Next
+    
+    'Amer
+    sNameRangeTable = "Table_Top_Amer"
+    sTableToUpdate = "T_Top_Amer"
+    
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    bd.Execute "DELETE * FROM " & sTableToUpdate
+    CDOTb.DataManager.RangeToAccess WsSalesMissing.ListObjects(sNameRangeTable).Range, MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+    
+    'Asie
+    sNameRangeTable = "Table_Top_Asia"
+    sTableToUpdate = "T_Top_Asia"
+    
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    bd.Execute "DELETE * FROM " & sTableToUpdate
+    CDOTb.DataManager.RangeToAccess WsSalesMissing.ListObjects(sNameRangeTable).Range, MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+    
+    'Europe
+        
+    sNameRangeTable = "Table_Top_Europe"
+    sTableToUpdate = "T_Top_Europe"
+    
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    bd.Execute "DELETE * FROM " & sTableToUpdate
+    CDOTb.DataManager.RangeToAccess WsSalesMissing.ListObjects(sNameRangeTable).Range, MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+    
+    
+    
+End Function
+
+Public Function Import_Pour_Stats()
+    Dim MySpec                  As ReaderSpec
+    Dim FeederSpec              As AdoFeederSpec
+    Dim wkbkb                   As Workbook
+    Dim Sfilename               As String
+    Dim WkMacro                 As Workbook
+    Dim bd                      As Database
+    Dim rst                     As Recordset
+    Dim Fso                     As New Scripting.FileSystemObject
+
+    Dim Vkey                    As Variant
+    Dim dico_entete             As New Dictionary
+    Dim File                    As Scripting.File
+    Dim FileTokeep              As Scripting.File
+    Dim OnlyFile                As Boolean
+
+    Dim i                       As Integer
+    Dim j                       As Integer
+    Dim t                       As Integer
+    Dim y                       As Integer
+    Dim w                       As Integer
+    Dim z                       As Integer
+    Dim tTableau()              As String
+    Dim iNbRows                 As Double
+    Dim iNbColumns              As Integer
+    Dim statusBarInitial        As String
+    Dim sTableToUpdate          As String
+    Dim sKey                    As String
+    Dim sNew_Key                As String
+    Dim sReportProduct          As String
+
+    statusBarInitial = Application.DisplayStatusBar
+    Application.DisplayStatusBar = True
+    Application.StatusBar = "Macro en cours..."
+    
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    WsLogError.Activate
+    
+    'On Error GoTo GestErr
+    Log.Info "Début du Process"
+    Application.ScreenUpdating = False
+    
+    'import des données nécessaires pour la génération des statistiques
+    '************************************************************************************************
+    '************************************************************************************************
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Recherches des données nécessaires pour la préparation des statistiques..."
+    Application.ScreenUpdating = False
+    
+    Application.ScreenUpdating = True
+    Log.Info "Recherche du dernier Report MCA"
+    Application.ScreenUpdating = False
+    
+    'Test de la présence de tous les chemains d'accès aux fichiers
+    WkMacro.Activate
+    i = 0
+    For i = 0 To 6 Step 2
+        
+    If UCase(WsSettings.[Path_Stat_Input_Folder].Offset(i, 3).Value) = "X" Then
+        If Not Fso.FileExists(WsSettings.[Path_Stat_Input_Folder].Offset(i, 1).Value) Then
+        OnlyFile = False
+       
+         Sfilename = WsSettings.[Path_Stat_Input_Folder].Offset(i, 1).Value
+                 If Right(WsSettings.[path_Input_Folder].Offset(i, 1).Value, 5) <> ".xlsx" Or Right(WsSettings.[path_Input_Folder].Offset(i, 1).Value, 4) <> ".xls" Then
+                     Set File = Fso.GetFile(Sfilename)
+                 Else
+                     MsgBox "Attention vous devez indiquer l'emplacement avec les noms de fichier !", vbCritical, "Attention"
+                 End If
+        
+         If FileTokeep Is Nothing Then
+             Log.Error "Pas fichier indiqué dans le champ path_Input_Folder"
+             Err.Raise 1, Description:="Arret du Traitement"
+             'GoTo GestErr
+         End If
+        End If
+    End If
+    Next i
+       
+    
+    '**********************************************************************
+    '* Boucle des imports
+    '**********************************************************************
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Préparation des imports..."
+    Application.ScreenUpdating = False
+    
+    'Pour rajouter un import
+    '       1 Dans l'onglet param, rajouter la table de spec d'import (la numérotation en première ligne est pour faciliter le repérage
+    '       2 Penser à éventuellement décaler la zone de recopie des requêtes d'analyse (la zone à effacer avant la construction des requêtes live et la zone d'écriture)
+    '       3 Rajouter une ligne dans l'onglet Settings
+    '       4 Mettre à jour la boucle For t=0 to XXX pour arriver à votre nouvelle ligne
+    '       5 Rajouter un select case avec la valeur y qui correspondra au numéro de la colonne de la spec d'impot dans l'onglet Param
+    t = 0
+    y = 9 ' Correspond à la référence offset de la colonne par rapport au range Spec_rng
+    For t = 0 To 6 Step 2 ' correspond à la référence offset de la ligne par rapport au range path_Stat_Input_Folder
+        Application.ScreenUpdating = True
+        Log.Info "Ouverture du fichier " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+        Application.ScreenUpdating = False
+        
+        If UCase(WsSettings.[Path_Stat_Input_Folder].Offset(t, 3).Value) = "X" Then
+            'Préparation des imports
+            dico_entete.RemoveAll
+            Set MySpec = New ReaderSpec
+            Set FeederSpec = New AdoFeederSpec
+            
+            Application.ScreenUpdating = True
+            Log.Info "Création de la spec d'import de la table de " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+            Application.ScreenUpdating = False
+            
+            i = 1 'Index pour le tableau des en-têtes
+            Do While WsParam.[Spec_rng].Offset(i, y) <> ""
+                If Not dico_entete.Exists(WsParam.[Spec_rng].Offset(i, y).Value2) Then
+                    dico_entete.Add WsParam.[Spec_rng].Offset(i, y).Value2, WsParam.[Spec_rng].Offset(i, y + 1).Value2
+                End If
+            i = i + 1
+            Loop
+            
+            For Each Vkey In dico_entete.Keys
+                    Select Case dico_entete(Vkey)
+                        'MySpec.Ordered = False
+                        Case "Text", "TEXT"
+                            MySpec.Add ReaderSpecItemType_String, Vkey
+                            FeederSpec.Add Vkey, adVarWChar, , nullable:=True
+                            'Mapper.Add
+                        Case "Number", "NUMBER"
+                            MySpec.Add ReaderSpecItemType_Double, Vkey
+                            FeederSpec.Add Vkey, adDouble, nullable:=True
+                        Case "Date", "DATE"
+                            MySpec.Add ReaderSpecItemType_DateTime, Vkey
+                            FeederSpec.Add Vkey, adDate, nullable:=True
+                    End Select
+            Next
+            Select Case y
+                
+                Case 9 'Carto Sales
+                        Application.ScreenUpdating = True
+                        Log.Info "Import du fichier " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+                        Application.StatusBar = "Import du fichier " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+                        Application.ScreenUpdating = False
+                            sTableToUpdate = "T_Import_Carto_Sales"
+                            
+                            Set wkbkb = Application.Workbooks.Open(WsSettings.[Path_Stat_Input_Folder].Offset(t, 1).Value)
+                            bd.Execute "DELETE * FROM " & sTableToUpdate
+                            
+                            wkbkb.Sheets(1).Range("A1").Select
+                            iNbRows = wkbkb.Sheets(1).UsedRange.Rows(wkbkb.Sheets(1).UsedRange.Rows.Count).Row
+                            Range("A1").Select
+                            iNbColumns = dico_entete.Count
+        
+                            CDOTb.DataManager.RangeToAccess wkbkb.Sheets(1).Range(Cells(1, 1), Cells(iNbRows, iNbColumns)), MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+                            
+                            wkbkb.Close False
+                            
+                            bd.Execute "DELETE * FROM T_Carto_Sales"
+                            bd.QueryDefs("Q_Append_Carto_Sales").Execute
+                    
+                Case 12 'Carto GOP
+                        Application.ScreenUpdating = True
+                        Log.Info "Import du fichier " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+                        Application.StatusBar = "Import du fichier " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+                        Application.ScreenUpdating = False
+                        sTableToUpdate = "T_Import_Carto_Gop_Eliot"
+                            
+                            'Set Wkbkb = Application.Workbooks.Open(WsSettings.[Path_Stat_Input_Folder].Offset(t, 1).Value)
+                            bd.Execute "DELETE * FROM " & sTableToUpdate
+                            
+                            Call ImportCartoGopEliot(WsSettings.[Path_Stat_Input_Folder].Offset(t, 1).Value)
+                            'Wkbkb.Sheets(1).Range("A1").Select
+                            'iNbRows = Wkbkb.Sheets(1).Range(Selection, Selection.End(xlDown)).Rows.Count
+                            'Range("A1").Select
+                            'iNbColumns = dico_entete.Count
+        
+                            'CDOTb.DataManager.RangeToAccess Wkbkb.Sheets(1).Range(Cells(1, 1), Cells(iNbRows, iNbColumns)), MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+                            
+                            'Wkbkb.Close False
+                            
+                            bd.Execute "DELETE * FROM T_Carto_Gop_Eliot"
+                            bd.QueryDefs("Q_Append_Carto_GOP").Execute
+                    
+                Case 15 ' Périmètre Consolidé
+                        Application.ScreenUpdating = True
+                        Log.Info "Import du fichier " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+                        Application.StatusBar = "Import du fichier " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+                        Application.ScreenUpdating = False
+                            sTableToUpdate = "T_Import_Perimetre_Conso"
+                            
+                            'Set Wkbkb = Application.Workbooks.Open(WsSettings.[Path_Stat_Input_Folder].Offset(t, 1).Value)
+                            bd.Execute "DELETE * FROM " & sTableToUpdate
+                            Call ImportPerimetreConso(WsSettings.[Path_Stat_Input_Folder].Offset(t, 1).Value)
+                            bd.Execute "DELETE * FROM T_Perimetre_Conso"
+                            bd.QueryDefs("Q_Append_Perimetre_Conso_A").Execute
+                            bd.QueryDefs("Q_Append_Perimetre_Conso_B").Execute
+            
+                Case 18 ' Analyse MCA
+                        Application.ScreenUpdating = True
+                        Log.Info "Import du fichier " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+                        Application.StatusBar = "Import du fichier " & WsSettings.[Path_Stat_Input_Folder].Offset(t, 0).Value
+                        Application.ScreenUpdating = False
+                            sTableToUpdate = "T_Import_Analyse_MCA"
+                            
+                            Set wkbkb = Application.Workbooks.Open(WsSettings.[Path_Stat_Input_Folder].Offset(t, 1).Value)
+                            bd.Execute "DELETE * FROM " & sTableToUpdate
+                            
+                            wkbkb.Sheets(1).Range("A1").Select
+                            iNbRows = wkbkb.Sheets(1).Range(Selection, Selection.End(xlDown)).Rows.Count
+                            wkbkb.Sheets(1).Range("A1").Select
+                            iNbColumns = dico_entete.Count
+                            
+                            z = 1
+                            For w = 3 To 8 'Changement des noms de colonne pour correspondre à la table d'import
+                                wkbkb.Sheets(1).Range("A1").Offset(0, w).Value = "M" & z
+                            z = z + 1
+                            Next w
+                            CDOTb.DataManager.RangeToAccess wkbkb.Sheets(1).Range(Cells(1, 1), Cells(iNbRows, iNbColumns)), MySpec, WsSettings.[path_database].Offset(0, 1).Value, sTableToUpdate, FeederSpec, , True
+                            
+                            wkbkb.Close False
+                            
+                            bd.Execute "DELETE * FROM T_Analyse_MCA"
+                            
+                            '********************************************************
+                            '********************************************************
+                            '* A améliorer
+                            bd.QueryDefs("Q_Append_Analyse_MCA").Execute
+                            'Du fait que Excel ne reconnait pas la fonction StrReverse, modification de Q_Import_Analyse_MCA_Adjusted
+                            'et modification via VBA de la clé corrigée
+                            
+                            'Détermination de la clé corrigée
+                            Set rst = bd.OpenRecordset("Select * from T_Analyse_MCA", dbOpenDynaset)
+                            rst.MoveLast
+                            i = rst.RecordCount
+                            rst.MoveFirst
+                            
+                            For j = 0 To i - 1
+                                sKey = rst!Key
+                                tTableau = Split(sKey, "-")
+                                sNew_Key = ""
+                                sReportProduct = ""
+                                    For z = UBound(tTableau) - 1 To 0 Step -1 '(on ne prend pas le dernier élément)
+                                        sNew_Key = sNew_Key & tTableau(z) & "-"
+                                    Next z
+                                Erase tTableau
+                                sNew_Key = Left(sNew_Key, Len(sNew_Key) - 1)
+                                If InStr(sNew_Key, "-") <> 0 Then
+                                    sReportProduct = Left(sNew_Key, (InStr(sNew_Key, "-") - 1))
+                                Else
+                                    sReportProduct = sNew_Key
+                                End If
+                                'If Len(sReportProduct) > 50 Then Stop
+                                'If Len(sNew_Key) > 60 Then Stop
+                                    rst.Edit
+                                        rst!Cle_Corrigee = sNew_Key
+                                        rst!Reporting_Product = sReportProduct
+                                    rst.Update
+                            
+                            rst.MoveNext
+                            Next j
+                           
+                            
+                End Select
+        End If
+    y = y + 3
+    Next t
+    
+End Function
+Function GetWk(MyFileName)
+    Dim lWorkbook As Workbook
+    For Each lWorkbook In Workbooks
+        If lWorkbook.FullName = MyFileName Then
+            Set GetWk = lWorkbook
+            Exit For
+        End If
+    Next
+End Function
+'*** PERIMETRE CONSO ***
+Public Function ImportPerimetreConso(sFile As String)
+
+    Dim WkPeriConso As Workbook
+    Dim ShMnemo As Worksheet
+    Dim PeriConsoName As String
+    Dim WasOpened As Boolean
+    Dim i As Integer
+    Dim LastRow As Integer
+
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    Dim rst As Recordset
+
+
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    WsLogError.Activate
+    
+    PeriConsoName = sFile
+    Application.StatusBar = "Perimètre Conso (opening)"
+    
+    If isOpen(PeriConsoName) Then
+        Set WkPeriConso = GetWk(PeriConsoName)
+        WasOpened = True
+    Else
+        Set WkPeriConso = Application.Workbooks.Open(PeriConsoName, ReadOnly:=True)
+    End If
+    
+    Set ShMnemo = WkPeriConso.Sheets("Mnemonic")
+    Call ClearFilters(ShMnemo)
+
+    LastRow = ShMnemo.Cells(1, 1).End(xlDown).Row
+    If LastRow > 100000 Then LastRow = 2
+    
+    Set rst = bd.OpenRecordset("Select * from T_Import_Perimetre_Conso")
+    For i = 2 To LastRow
+        Application.StatusBar = "Périmètre Conso " & Int(i / LastRow * 100) & "%"
+        
+        rst.AddNew
+            rst!Mnemonic = ShMnemo.Cells(i, 1)
+            rst!Counterpart = Mid(ShMnemo.Cells(i, 2), 1, rst!Counterpart.Size)
+            rst![Group name] = Mid(ShMnemo.Cells(i, 3), 1, rst![Group name].Size)
+            rst![Perimetre] = ShMnemo.Cells(i, 4)
+            rst![perimetre pour macro REPORTING] = ShMnemo.Cells(i, 5)
+            rst![Perimetre special reporting comite autres ctpy] = ShMnemo.Cells(i, 6)
+            rst![Gestionnaire DRM] = ShMnemo.Cells(i, 7)
+            rst![Gestionnaire Prod] = ShMnemo.Cells(i, 8)
+        rst.Update
+    Next
+    
+    Application.StatusBar = "Périmètre Conso (closing)"
+    If Not WasOpened Then WkPeriConso.Close False
+    
+    WkMacro.Activate
+    Set rst = Nothing
+    Set bd = Nothing
+
+
+End Function
+Public Function ImportCartoGopEliot(sFile As String)
+
+    Dim WkCartoGOP As Workbook
+    Dim ShMnemo As Worksheet
+    Dim CartoGopName As String
+    Dim WasOpened As Boolean
+    Dim i As Integer, LastRow As Integer
+
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    Dim rst As Recordset
+
+
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    WsLogError.Activate
+    
+    CartoGopName = sFile
+    Application.StatusBar = "Carto GOP Eliot(opening)"
+    
+    If isOpen(CartoGopName) Then
+        Set WkCartoGOP = GetWk(CartoGopName)
+        WasOpened = True
+    Else
+        Set WkCartoGOP = Application.Workbooks.Open(CartoGopName, ReadOnly:=True)
+    End If
+    
+    Set ShMnemo = WkCartoGOP.Sheets("Carto")
+    Call ClearFilters(ShMnemo)
+
+    LastRow = ShMnemo.Cells(1, 1).End(xlDown).Row
+    If LastRow > 100000 Then LastRow = 2
+    
+    Set rst = bd.OpenRecordset("Select * from T_Import_Carto_Gop_Eliot")
+    For i = 2 To LastRow
+        Application.StatusBar = "Carto GOP " & Int(i / LastRow * 100) & "%"
+        
+        rst.AddNew
+            rst!GOP = ShMnemo.Cells(i, 1)
+            rst![FBK Activity] = ShMnemo.Cells(i, 2)
+            rst![FBK SA1] = ShMnemo.Cells(i, 3)
+            rst![FBK SA2] = ShMnemo.Cells(i, 4)
+            rst![FBK Geo Zone] = ShMnemo.Cells(i, 5)
+            rst![COO Manager] = Left(ShMnemo.Cells(i, 6), 100)
+            rst![Trader name] = Left(ShMnemo.Cells(i, 7), 100)
+            
+        rst.Update
+    Next
+    
+    Application.StatusBar = "Carto GOP (closing)"
+    If Not WasOpened Then WkCartoGOP.Close False
+    
+    WkMacro.Activate
+    Set rst = Nothing
+    Set bd = Nothing
+    
+
+End Function
+
+Public Function isOpen(sFichier As String) As Boolean
+    Dim Fichier As Long
+    
+    On Error GoTo Erreur
+    Fichier = FreeFile
+    
+    Open sFichier For Input Lock Read As #Fichier
+    Close #Fichier
+    isOpen = False
+    Exit Function
+Erreur:
+    isOpen = True
+End Function
