@@ -1,0 +1,257 @@
+Option Explicit
+
+Private Const m_sSheetDetail        As String = "Deals"
+
+Sub DoubleClick(Target As Range, Cancel)
+    Dim sNomFichier As String
+    Dim sManaging As String
+    Dim sIndicateur As String
+    Dim sIndicateurProduct As String
+    Dim iRowdepart As Integer
+    Dim iRowFin As Integer
+    Dim iColumnDepart As Integer
+    Dim iColumnFin As Integer
+    Dim WkMacro As Workbook
+    
+    
+    'Définition de la zone de sensibilité
+    Set WkMacro = ThisWorkbook
+    
+    iRowdepart = 7
+    iRowFin = Range("B6").SpecialCells(xlCellTypeLastCell).Row
+    iColumnDepart = 7
+    iColumnFin = 15
+    
+    If Target.Row < iRowdepart And Target.Row > iRowFin Then
+        Exit Sub
+    ElseIf Target.Column < iColumnDepart And Target.Column > iColumnFin Then
+        Exit Sub
+    End If
+    Range("B6").Select
+    sIndicateurProduct = ""
+    Select Case Target.Column
+        Case 7 'Volume Total last 6 months
+            sNomFichier = "Report_MCA"
+            If Left(Cells(Target.Row, Target.Column).Value, 1) = "=" Then 'sur une ligne total
+                sManaging = RecupManaging(Target.Row - 1)
+            Else
+                sManaging = RecupManaging(Target.Row)
+            End If
+            sIndicateur = "*"
+            
+            Call ApplyFilter(sNomFichier, sManaging, sIndicateur, sIndicateurProduct)
+            
+        Case 8 'Volume Equivalent Paper
+            sNomFichier = "Analyse_MCA"
+            If Left(Cells(Target.Row, Target.Column).Value, 1) = "=" Then 'sur une ligne total
+                    sManaging = RecupManaging(Target.Row - 1)
+            Else
+                sManaging = RecupManaging(Target.Row)
+                sIndicateurProduct = Range("E" & Target.Row).Value
+            End If
+            sIndicateur = "*"
+            
+            Call ApplyFilter(sNomFichier, sManaging, sIndicateur, sIndicateurProduct)
+        
+        Case 9 '% sur total Region
+            sNomFichier = "Analyse_MCA"
+            If Left(Cells(Target.Row, Target.Column).Value, 1) = "=" Then 'sur une ligne total
+                    sManaging = RecupManaging(Target.Row - 1)
+            Else
+                sManaging = RecupManaging(Target.Row)
+                sIndicateurProduct = Range("E" & Target.Row).Value
+            End If
+            sIndicateur = "*"
+            
+            Call ApplyFilter(sNomFichier, sManaging, sIndicateur, sIndicateurProduct)
+        
+        Case 10 'MW Eligible
+            sNomFichier = "Report_MCA"
+            If Left(Cells(Target.Row, Target.Column).Value, 1) = "=" Then 'sur une ligne total
+                    sManaging = RecupManaging(Target.Row - 1)
+            Else
+                sManaging = RecupManaging(Target.Row)
+            End If
+            sIndicateur = "Volume Eli MW"
+            
+            Call ApplyFilter(sNomFichier, sManaging, sIndicateur, sIndicateurProduct)
+        
+        Case 11 'Volume MCA in Progress
+            sNomFichier = "Analyse_MCA"
+            If Left(Cells(Target.Row, Target.Column).Value, 1) = "=" Then 'sur une ligne total
+                    sManaging = RecupManaging(Target.Row - 1)
+            Else
+                sManaging = RecupManaging(Target.Row)
+                sIndicateurProduct = Range("E" & Target.Row).Value
+            End If
+            sIndicateur = "Volume MCA In Progress"
+            
+            Call ApplyFilter(sNomFichier, sManaging, sIndicateur, sIndicateurProduct)
+        
+        Case 12 'Volume MCA Executed
+            sNomFichier = "Analyse_MCA"
+            If Left(Cells(Target.Row, Target.Column).Value, 1) = "=" Then 'sur une ligne total
+                    sManaging = RecupManaging(Target.Row - 1)
+            Else
+                sManaging = RecupManaging(Target.Row)
+                sIndicateurProduct = Range("E" & Target.Row).Value
+            End If
+            sIndicateur = "Volume MCA YtD"
+            
+            Call ApplyFilter(sNomFichier, sManaging, sIndicateur, sIndicateurProduct)
+        
+        Case 13 'Volume MW In Progress
+            sNomFichier = "Analyse_MCA"
+            If Left(Cells(Target.Row, Target.Column).Value, 1) = "=" Then 'sur une ligne total
+                    sManaging = RecupManaging(Target.Row - 1)
+            Else
+                sManaging = RecupManaging(Target.Row)
+                sIndicateurProduct = Range("E" & Target.Row).Value
+            End If
+            sIndicateur = "Volume MW In Progress"
+            
+            Call ApplyFilter(sNomFichier, sManaging, sIndicateur, sIndicateurProduct)
+        
+        Case 14 'Volume Electro DTCC
+            sNomFichier = "Report_MCA"
+            If Left(Cells(Target.Row, Target.Column).Value, 1) = "=" Then 'sur une ligne total
+                    sManaging = RecupManaging(Target.Row - 1)
+            Else
+                sManaging = RecupManaging(Target.Row)
+            End If
+            sIndicateur = "Volume Electro"
+            
+            Call ApplyFilter(sNomFichier, sManaging, sIndicateur, sIndicateurProduct)
+         
+        Case 15 'Volume MW Live
+            sNomFichier = "Analyse_MCA"
+            If Left(Cells(Target.Row, Target.Column).Value, 1) = "=" Then 'sur une ligne total
+                    sManaging = RecupManaging(Target.Row - 1)
+            Else
+                sManaging = RecupManaging(Target.Row)
+                sIndicateurProduct = Range("E" & Target.Row).Value
+            End If
+            sIndicateur = "Volume MW YtD"
+            
+            Call ApplyFilter(sNomFichier, sManaging, sIndicateur, sIndicateurProduct)
+        
+    End Select
+    
+    
+End Sub
+
+Public Function ApplyFilter(sNomOnglet As String, sNomManaging As String, sValeurFiltre As String, sValProduct As String)
+    Dim MyFilterNameColumn As Integer
+    Dim sListCriteria As String
+    Dim i, j, t As Integer
+    Dim iLastRow As Integer
+    
+    Application.Visible = True
+    
+    If Not IsSheet_Exist(m_sSheetDetail) Then
+        Application.DisplayAlerts = False
+        ThisWorkbook.Sheets.Add After:=Sheets(Sheets.Count)
+        ActiveSheet.Name = m_sSheetDetail
+        Application.DisplayAlerts = True
+    End If
+    
+    ThisWorkbook.Worksheets(m_sSheetDetail).Visible = True
+    ThisWorkbook.Worksheets(m_sSheetDetail).Select
+    Application.DisplayAlerts = False
+    Sheets(m_sSheetDetail).Cells.Select
+    Selection.Delete Shift:=xlUp
+    Range("A1").Select
+    Application.DisplayAlerts = True
+    
+    iLastRow = 2
+    
+    Select Case sNomOnglet
+        Case "Report_MCA"
+            Sheets(sNomOnglet).Visible = True
+            Sheets(sNomOnglet).Activate
+            ActiveSheet.ListObjects("Table_Report_MCA").Range.AutoFilter Field:=30, Criteria1:=sNomManaging, Operator:=xlFilterValues
+            If sValeurFiltre <> "*" Then ActiveSheet.ListObjects("Table_Report_MCA").Range.AutoFilter Field:=60, Criteria1:="=*" & sValeurFiltre & "*", Operator:=xlAnd
+            Range("A1").Select
+            Range("Table_Report_MCA[[#Headers],[Deal Operation ID]]").Select
+            iLastRow = Selection.End(xlDown).Row
+            
+        Case "Analyse_MCA"
+            Sheets(sNomOnglet).Visible = True
+            Sheets(sNomOnglet).Activate
+            ActiveSheet.ListObjects("Table_Analyse_MCA").Range.AutoFilter Field:=3, Criteria1:=sNomManaging, Operator:=xlFilterValues
+            If sValeurFiltre <> "*" Then ActiveSheet.ListObjects("Table_Analyse_MCA").Range.AutoFilter Field:=24, Criteria1:="=*" & sValeurFiltre & "*", Operator:=xlAnd
+            If sValProduct <> "" Then ActiveSheet.ListObjects("Table_Analyse_MCA").Range.AutoFilter Field:=23, Criteria1:="=" & sValProduct, Operator:=xlAnd
+            Range("A1").Select
+            Range("Table_Analyse_MCA[[#Headers],[Key]]").Select
+            iLastRow = Selection.End(xlDown).Row
+    End Select
+    
+    Rows("1:" & iLastRow).Select
+    Selection.SpecialCells(xlCellTypeVisible).Select
+    Selection.Copy
+    Sheets(m_sSheetDetail).Select
+    Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks _
+        :=False, Transpose:=False
+    Selection.PasteSpecial Paste:=xlPasteFormats, Operation:=xlNone, _
+        SkipBlanks:=False, Transpose:=False
+    Sheets(m_sSheetDetail).Range("A1").Select
+       
+    If sNomOnglet = "Analyse_MCA" Then
+        For i = 4 To 10
+            Sheets(m_sSheetDetail).Columns(i).NumberFormat = "0"
+        Next i
+    End If
+    
+    Sheets(sNomOnglet).Select
+    Select Case sNomOnglet
+        Case "Report_MCA"
+            Range("Table_Report_MCA[[#Headers],[Deal Operation ID]]").Select
+            ActiveSheet.ShowAllData
+            Sheets(sNomOnglet).Visible = False
+        Case "Analyse_MCA"
+            Range("Table_Analyse_MCA[[#Headers],[Key]]").Select
+            ActiveSheet.ShowAllData
+            Sheets(sNomOnglet).Visible = False
+    End Select
+    Sheets(m_sSheetDetail).Select
+End Function
+
+Private Function IsSheet_Exist(ByVal sName As String) As Boolean
+    Dim oSH     As Excel.Worksheet
+    
+On Error GoTo Erreurs
+    IsSheet_Exist = False
+    Set oSH = ThisWorkbook.Worksheets(sName)
+    IsSheet_Exist = True
+    Exit Function
+Erreurs:
+    
+End Function
+Public Function RecupManaging(iLigne As Integer) As String
+    Dim iMax As Integer
+    Dim iMin As Integer
+    Dim t As Integer
+    
+    iMax = iLigne
+    iMin = 7
+    
+    For t = iMax To iMin Step -1
+        If Sheets("Weekly").Range("B" & t) <> "" Then
+            RecupManaging = Sheets("Weekly").Range("B" & t)
+            Exit Function
+        End If
+        
+    Next t
+    
+End Function
+Sub ChangeFormatCondition()
+
+    If Columns("K:O").FormatConditions.Count < 2 Then Exit Sub
+    
+    If Columns("K:O").FormatConditions(2).ShowIconOnly = False Then
+        Columns("K:O").FormatConditions(2).ShowIconOnly = True
+    Else
+        Columns("K:O").FormatConditions(2).ShowIconOnly = False
+    End If
+    
+End Sub
