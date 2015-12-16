@@ -1,0 +1,1284 @@
+Sub Traitement_Report_MCA()
+    
+    Dim statusBarInitial As String
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    Dim rst As Recordset
+    Dim Fso As New Scripting.FileSystemObject
+    Dim File As Scripting.File
+    Dim FileTokeep As Scripting.File
+    Dim OnlyFile As Boolean
+    Dim DicMCA As New Dictionary
+    Dim tTableau() As String
+    Dim i, t, y, w As Integer
+    Dim sQueryUpdate As String
+    
+    Dim iTestMultipleVariable As Boolean
+    Dim sDealSelection As String
+    Dim Selectionneur As C_RDG
+    Dim Sfilename As String
+    
+    
+    Set WkMacro = ThisWorkbook
+
+'GoTo test
+
+
+    statusBarInitial = Application.DisplayStatusBar
+    Application.DisplayStatusBar = True
+    Application.StatusBar = "Macro en cours..."
+    
+    'Initialisation de l'onglet des Log Error
+    If WsLogError.ListObjects("Logs").ListRows.Count > 0 Then
+        WsLogError.ListObjects("Logs").DataBodyRange.Delete
+    End If
+    WsLogError.Activate
+    
+    On Error GoTo GestErr
+    Log.Info "Début du Process"
+    Application.ScreenUpdating = False
+    
+    'import des données
+    '************************************************************************************************
+    '************************************************************************************************
+    Application.ScreenUpdating = True
+    Log.Info "Recherche du dernier Report MCA"
+    Application.StatusBar = "Recherche du dernier Report MCA..."
+    Application.ScreenUpdating = False
+    
+    If Not Fso.FileExists(WsSettings.[path_Input_Folder].Offset(0, 1).Value) Then
+        OnlyFile = False
+       
+        Sfilename = WsSettings.[path_Input_Folder].Offset(0, 1).Value
+                If Right(WsSettings.[path_Input_Folder].Offset(0, 1).Value, 5) <> ".xlsx" Then
+                    Set File = Fso.GetFile(Sfilename)
+                Else
+                    MsgBox "Attention vous devez indiquer l'emplacement avec le nom de fichier !", vbCritical, "Attention"
+                End If
+       
+        If FileTokeep Is Nothing Then
+            Log.Error "Pas fichier indiqué dans le champ path_Input_Folder"
+            Err.Raise 1, Description:="Arret du Traitement"
+            GoTo GestErr
+        End If
+    Else
+         Sfilename = WsSettings.[path_Input_Folder].Offset(0, 1).Value
+    End If
+        
+    Log.Info "Ouverture du fichier "
+    
+    Application.ScreenUpdating = True
+    Log.Info "Mise à jour de Data N-1 et Clean de Data" 'Onglet Data de la macro qui est transféré dans Data N-1
+    Application.StatusBar = "Préparation de l'onglet Data pour l'historique..."
+    Application.ScreenUpdating = False
+    
+    'Vérification que l'onglet DATA n'est pas vide car constitue l'analyse N-1 pour profiter de la mise à jour manuelle
+    If WsData.ListObjects("TableData").ListRows.Count > 0 Then
+        'Transfert des des infos de l'onglet Data vers l'onglet Data N-1
+            If WsDataN_1.ListObjects("TableData_N_1").ListRows.Count > 0 Then
+                WsDataN_1.ListObjects("TableData_N_1").DataBodyRange.Delete
+            End If
+         WsData.ListObjects("TableData").DataBodyRange.Copy
+         WsDataN_1.Range("A2").PasteSpecial (xlPasteValuesAndNumberFormats)
+         WsData.ListObjects("TableData").DataBodyRange.Delete
+    Else
+        MsgBox "Attention, vous ne devez pas effectuer vous-même le copier/coller de l'onglet Data vers Data N-1" _
+        & Chr$(13) & Chr$(13) & "Veuillez quitter le présent fichier sans sauvegarder et relancer afin de pas perdre les commentaires précédemment renseignés", vbCritical
+        Exit Sub
+    End If
+    
+    'Sauvegarde dans la base de données des ex-commentaires N-1 dans N-2 sauvegarde
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    bd.Execute "DELETE * FROM T_Report_MCA_N_2_sauvegarde"
+    bd.QueryDefs("Q_Append_Report_MCA_N2_sauvegarde").Execute
+    
+    'Import de l'onglet Data pour remplir la table Data N-1 spec d'import colonne 3 onglet Param
+    Call Import_Data_Report_MCA(3, "T_Report_MCA_N_1", "TableData_N_1")
+    
+    'Import de l'onglet Data pour remplir la table Data spec d'import colonne 0 onglet Param
+    Call Import_Data_Report_MCA(0, "T_Import_Report_MCA", "TableData")
+    
+    'Lancement des traitements avec en priorité 1 : reprise de l'analyse/commentaires de N-1
+    'Puis sur les Deals No_Electonic restants, utilisation de l'onglet Règle De Gestion pour gérer les cas automatiquement
+    'Intégration au préalable au traitement automatique, les tables de transco permettant de renseigner les colonne Area et Perimètre Conso
+    '************************************************************************************
+    
+    'Import de la table Transco Area spec d'import colonne 6 onglet Param
+    Call Import_Data_Report_MCA(6, "T_Transco_Area", "Table_Transco_Area")
+    
+    '*************************************************************
+    ' Traitement des deals déjà commentés et préparation de la table des new Deals Conf à renseigner
+    '*****************************************************************
+    Application.ScreenUpdating = True
+    Log.Info "Connexion à la base de donnée pour récuperation des informations"
+    Application.StatusBar = "Préparation de l'analyse du Report MCA..."
+    Application.ScreenUpdating = False
+    
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+     
+    'Alimentation de la table des deals Analysed
+    bd.Execute "DELETE * FROM T_Report_MCA_Already_Analysed"
+    bd.QueryDefs("Q_Append_Report_MCA_Already_Analysed").Execute 'Les deals en commun entre la table d'import et les deals N-1
+  
+    bd.Execute "DELETE * FROM T_Report_MCA"
+    bd.QueryDefs("Q_Append_Report_MCA").Execute 'Alimentation de la table Deals Conf avec les deals à commenter automatiquement uniquement
+    
+    '*******************************************************************
+    ' Préparation des règles d'update de la table Deals Conf
+    
+    Application.ScreenUpdating = True
+    Log.Info "Création des requêtes SQL suivant les Règles de Gestion"
+    Application.StatusBar = "Création des requêtes SQL suivant les Règles de Gestion..."
+    Application.ScreenUpdating = False
+    
+    'Construction des requêtes SQL à la volée en stockant les informations dans un tableau et la classe C_RDG
+    i = 1
+    'WkMacro.Activate
+    Do While WsRDG.[Rng_Produit].Offset(i, 0) <> ""
+        Set Selectionneur = New C_RDG
+        Selectionneur.Template_Name = WsRDG.[rng_TemplateName].Offset(i, 0)
+        Selectionneur.isMCA = WsRDG.[rng_IsMCA].Offset(i, 0)
+        Selectionneur.Electronic = WsRDG.[rng_Electronic].Offset(i, 0)
+        Selectionneur.Produit = WsRDG.[Rng_Produit].Offset(i, 0)
+        Selectionneur.VanilleExo = WsRDG.[Rng_VanilleExo].Offset(i, 0)
+        Selectionneur.Strategy_Type = WsRDG.[Rng_Strategy_Type].Offset(i, 0)
+        Selectionneur.Product_Desc = WsRDG.[Rng_ProductDescription].Offset(i, 0)
+        Selectionneur.GOP = WsRDG.[Rng_GOP].Offset(i, 0)
+        Selectionneur.ConfirmLabel = WsRDG.[rng_confirmlabel].Offset(i, 0)
+        Selectionneur.UnderlyingCurr = WsRDG.[rng_Currency].Offset(i, 0)
+        Selectionneur.UnderlyingType = WsRDG.[Rng_UnderlyingType].Offset(i, 0)
+        Selectionneur.ValeurMCAEli = WsRDG.[rng_ValMCAEli].Offset(i, 0)
+        Selectionneur.ValeurMWEli = WsRDG.[rng_ValMWEli].Offset(i, 0)
+        Selectionneur.ValeurComment = WsRDG.[rng_ValComment].Offset(i, 0)
+        DicMCA.Add i - 1, Selectionneur
+        i = i + 1
+    Loop
+    i = 0
+    Application.ScreenUpdating = True
+    Log.Info "Création des query d'après l'onglet règle de gestion"
+    Application.StatusBar = "Lancement des requêtes SQL d'analyse..."
+    Application.ScreenUpdating = False
+    
+    'Pour les tests et permettre une vérification, écriture des requêtes dans l'onglet caché "Param" avant chaque lancement
+    'pour identifier plus facilement une requête et donc une regle de gestion qui perturbe le traitement
+    '*******************************************************
+    WsParam.Columns("BA:BG").Delete shift:=xlToLeft
+
+    'Récupération des règles de gestion et lancement des query
+    w = 1
+    
+    For y = 0 To DicMCA.Count - 1
+        'Set Selectionneur = DicMCA(y)
+        iTestMultipleVariable = False
+        sQueryUpdate = ""
+        'sQueryUpdateComplement = ""
+        sQueryUpdate = "UPDATE [T_Report_MCA] SET [T_Report_MCA].[Is MCA Eligible] = """ & DicMCA(y).ValeurMCAEli & """, "
+        sQueryUpdate = sQueryUpdate & "[T_Report_MCA].[Is MW Eligible] = """ & DicMCA(y).ValeurMWEli & """"
+        If DicMCA(y).ValeurComment <> "" Then sQueryUpdate = sQueryUpdate & ", [T_Report_MCA].[Comment] = """ & DicMCA(y).ValeurComment & """"
+        
+        If DicMCA(y).Produit <> "" Then
+            If InStr(DicMCA(y).Produit, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " WHERE ((([T_Report_MCA].[Produit]) Like """ & DicMCA(y).Produit & """)"
+            Else
+                tTableau = Split(DicMCA(y).Produit, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " WHERE ((([T_Report_MCA].[Produit]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Produit]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicMCA(y).Template_Name <> "" Then 'Alors on rajouter le champ dans les critères de sélection
+            If InStr(DicMCA(y).Template_Name, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Template Name]) Like """ & DicMCA(y).Template_Name & """)"
+            Else
+                tTableau = Split(DicMCA(y).Template_Name, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Template Name]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Template Name]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        
+        If DicMCA(y).Electronic <> "" Then 'Alors on rajouter le champ dans les critères de sélection
+            If InStr(DicMCA(y).Electronic, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Electronic]) Like """ & DicMCA(y).Electronic & """)"
+            Else
+                tTableau = Split(DicMCA(y).Electronic, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Electronic]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Electronic]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+               
+        If DicMCA(y).VanilleExo <> "" Then
+            If InStr(DicMCA(y).VanilleExo, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Vanille Exo]) Like """ & DicMCA(y).VanilleExo & """)"
+            Else
+                tTableau = Split(DicMCA(y).VanilleExo, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Vanille Exo]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Vanille Exo]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicMCA(y).Strategy_Type <> "" Then
+            If InStr(DicMCA(y).Strategy_Type, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Strategy Type]) Like """ & DicMCA(y).Strategy_Type & """)"
+            Else
+                tTableau = Split(DicMCA(y).Strategy_Type, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Strategy Type]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Strategy Type]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+            
+        If DicMCA(y).Product_Desc <> "" Then
+            If InStr(DicMCA(y).Product_Desc, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Product description]) Like """ & DicMCA(y).Product_Desc & """)"
+            Else
+                tTableau = Split(DicMCA(y).Product_Desc, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Product description]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Product description]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicMCA(y).isMCA <> "" Then
+            If InStr(DicMCA(y).isMCA, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Is MCA]) Like """ & DicMCA(y).isMCA & """)"
+            Else
+                tTableau = Split(DicMCA(y).isMCA, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Is MCA]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Is MCA]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicMCA(y).GOP <> "" Then
+            If InStr(DicMCA(y).GOP, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[GOP]) Like """ & DicMCA(y).GOP & """)"
+            Else
+                tTableau = Split(DicMCA(y).GOP, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[GOP]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[GOP]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicMCA(y).ConfirmLabel <> "" Then
+            If InStr(DicMCA(y).ConfirmLabel, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Confirm Label]) Like """ & DicMCA(y).ConfirmLabel & """)"
+            Else
+                tTableau = Split(DicMCA(y).ConfirmLabel, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Confirm Label]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Confirm Label]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicMCA(y).UnderlyingCurr <> "" Then
+            If InStr(DicMCA(y).UnderlyingCurr, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Underlying Currency]) Like """ & DicMCA(y).UnderlyingCurr & """)"
+            Else
+                tTableau = Split(DicMCA(y).UnderlyingCurr, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Underlying Currency]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Underlying Currency]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicMCA(y).UnderlyingType <> "" Then
+            If InStr(DicMCA(y).UnderlyingType, ",") = 0 Then 'si une seule valeur, on complète la query
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Underlying Type]) Like """ & DicMCA(y).UnderlyingType & """)"
+            Else
+                tTableau = Split(DicMCA(y).UnderlyingType, ",") 'split des différentes valeurs à intégrer dans le filtre
+                sQueryUpdate = sQueryUpdate & " and (([T_Report_MCA].[Underlying Type]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Report_MCA].[Underlying Type]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        sQueryUpdate = sQueryUpdate & ")"
+                      
+        'Recopie des requêtes dans l'onglet parametre
+        WsParam.Range("BA1").Offset(w, 0).Value = sQueryUpdate
+
+        w = w + 1
+
+        bd.Execute sQueryUpdate
+    Next y
+        
+    'Formatage des lignes de recopie des query dans l'onglet Param
+    WsParam.Range("BA2").Copy
+    Columns("BA").PasteSpecial Paste:=xlPasteFormats, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+    Application.CutCopyMode = False
+    
+    ' Récupération des Deals déja analysé dans le passé et ceux traités par les query
+    Application.ScreenUpdating = True
+    Log.Info "Récuperation des données retraitées"
+    Application.StatusBar = "Récupération des données analysées..."
+    Application.ScreenUpdating = False
+    
+    bd.Execute "Delete * from T_Report_MCA_All_Analysed"
+    bd.QueryDefs("Q_Append_Report_MCA_All_Analysed").Execute
+    
+    'Gestion de l'historique à revoir
+    bd.QueryDefs("Q_Append_Histo_Report_MCA_All").Execute
+    
+    Set rst = bd.OpenRecordset("SELECT * from T_Report_MCA_All_Analysed")
+    
+    If WsData.ListObjects("TableData").ListRows.Count > 0 Then
+        WsData.ListObjects("TableData").DataBodyRange.Delete
+    End If
+    
+    WsData.Range("A2").CopyFromRecordset rst
+    WsData.Cells.EntireColumn.AutoFit
+    rst.Close
+    
+    '****************************** Mise en avant ce qui reste à traiter manuellement
+    'En filtrant l'onglet Data sur les deals No_Electronic sans la colonne isMCA eEligible de renseignée
+    sDealSelection = ""
+    Set rst = bd.OpenRecordset("Select * from Q_Deals_A_Analyser_Manuellement")
+        If Not rst.EOF Then
+            rst.MoveFirst
+            While Not rst.EOF
+                sDealSelection = sDealSelection & rst![Deals].Value & ", "
+               rst.MoveNext
+            Wend
+        Else
+            MsgBox "Pas de nouveaux deals à analyser manuellement."
+            WkMacro.WsTCD.Activate
+        End If
+    rst.Close
+    sDealSelection = Left(sDealSelection, Len(sDealSelection) - 2)
+    tTableau = Split(sDealSelection, ",")
+
+    'Filtrage des données sur les deals restants à analyser
+    If Not WsData.AutoFilterMode Then WsData.Range("A1").AutoFilter
+        
+    If UBound(tTableau) > 0 Then
+            'Wkbkb.Range("TableData[[#Headers],[Deal Operation ID]]").Select
+            WsData.ListObjects("TableData").Range.AutoFilter Field:=1, Criteria1:=tTableau, Operator:=xlFilterValues
+    End If
+    '****************************************************************************************
+    '****************************************************************************************
+    
+    'Rajout du 01/12/2015 : mise à jour des Sales manquants (pour permettre éventuellement la mise à jour de la table pour le TOP 30
+    WkMacro.Activate
+    Set rst = bd.OpenRecordset("SELECT * from Q_List_Sales_Missing")
+    
+    If WsSalesMissing.ListObjects("Table_Sales_Missing").ListRows.Count > 0 Then
+        WsSalesMissing.ListObjects("Table_Sales_Missing").DataBodyRange.Delete
+    End If
+    
+    WsSalesMissing.Range("Table_Sales_Missing").CopyFromRecordset rst
+    WsSalesMissing.Cells.EntireColumn.AutoFit
+    rst.Close
+    
+    'Rajout du 03/12/2015 : Donner la liste avant le lancement des stats pour récupération d'une liste à la main
+    'nous copions les données du report MCA analysé dans la table T_Data_Pour_Stats afin de reprendre le
+    'process normal de définition du top 30
+    bd.Execute "Delete * from T_Data_Pour_Stats"
+    bd.QueryDefs("Q_Append_Data_Pour_Stats_From_Data_Analysed").Execute
+   
+   
+test:
+   
+    Call GenerationTop
+            
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    'On recopie la liste dans l'onglet Sales Missing and Top 30
+    'Amer
+        Set rst = bd.OpenRecordset("SELECT * from T_Top_Amer")
+        
+        If WsTop30.ListObjects("Consult_Top_Amer").ListRows.Count > 0 Then
+            WsTop30.ListObjects("Consult_Top_Amer").DataBodyRange.Delete
+        End If
+        
+        WsTop30.Range("Consult_Top_Amer").CopyFromRecordset rst
+        WsTop30.Cells.EntireColumn.AutoFit
+        rst.Close
+    'Asie
+        Set rst = bd.OpenRecordset("SELECT * from T_Top_Asia")
+        
+        If WsTop30.ListObjects("Consult_Top_Asia").ListRows.Count > 0 Then
+            WsTop30.ListObjects("Consult_Top_Asia").DataBodyRange.Delete
+        End If
+        
+        WsTop30.Range("Consult_Top_Asia").CopyFromRecordset rst
+        WsTop30.Cells.EntireColumn.AutoFit
+        rst.Close
+    'Europe
+        Set rst = bd.OpenRecordset("SELECT * from T_Top_Europe")
+        
+        If WsTop30.ListObjects("Consult_Top_Europe").ListRows.Count > 0 Then
+            WsTop30.ListObjects("Consult_Top_Europe").DataBodyRange.Delete
+        End If
+        
+        WsTop30.Range("Consult_Top_Europe").CopyFromRecordset rst
+        WsTop30.Cells.EntireColumn.AutoFit
+        rst.Close
+        
+    bd.Close
+    Set bd = Nothing
+    Erase tTableau
+    Application.ScreenUpdating = True
+    
+    If WsSalesMissing.ListObjects("Table_Sales_Missing").ListRows.Count > 0 Then
+        MsgBox "Vous avez des Sales manquants dans la carto Sales (c.f. onglet 'Sales Missing into Carto')" & vbCrLf & "Process terminé avec succès." & vbCrLf & "L'onglet Data est filtré sur les deals à renseigner à la main, au nombre de " '& UBound(tTableau)
+    Else
+        MsgBox "Process terminé avec succès." & vbCrLf & "L'onglet Data est filtré sur les deals à renseigner à la main, au nombre de " & UBound(tTableau)
+    End If
+    
+    Erase tTableau
+    
+    WsData.Activate
+        
+    Log.Info "Fin du Process"
+    Application.StatusBar = "Fin du process..."
+    Application.DisplayStatusBar = statusBarInitial
+   
+    Exit Sub
+
+GestErr:
+    MsgBox "Fin anormal merci de regarder les logs : " & Err.Description
+    WkMacro.Activate
+    WsLogError.Visible = True
+    WsLogError.Activate
+    Log.Fatal Err.Description
+    Application.ScreenUpdating = True
+    Application.DisplayStatusBar = statusBarInitial
+End Sub
+Public Sub Traitement_Statistiques()
+    'Dim Wkbkb As Workbook
+    Dim Selectionneur As C_Critere
+    Dim SelectFO As C_Crit_WeeklyFO
+    'Dim Srange As Range
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    Dim dico_entete As New Dictionary
+    Dim DicAnaMCAStat As New Dictionary
+    Dim DicReportMCAStat As New Dictionary
+    
+    Dim MaDate As Date
+    
+    Dim sQueryUpdate As String
+    Dim tTableau() As String
+    
+    
+    Dim iNbRec  As Integer
+    Dim iNbRec2 As Integer
+    Dim statusBarInitial As String
+    
+    Dim i As Integer
+    Dim y As Integer
+    Dim w, t As Integer
+    
+    
+    statusBarInitial = Application.DisplayStatusBar
+    Application.DisplayStatusBar = True
+    Application.StatusBar = "Macro en cours..."
+    
+    WsLogError.Activate
+    
+'On Error GoTo GestErr
+    Log.Info "Début du Process"
+    Application.ScreenUpdating = False
+    
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    Set dico_entete = Nothing
+    Set DicAnaMCAStat = Nothing
+    Set DicReportMCAStat = Nothing
+    
+'GoTo test:
+    
+    'import des données nécessaires pour la génération des statistiques
+    Call Import_Pour_Stats
+    
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+    WkMacro.Activate
+    'stats globales
+    'ObjAcc.Opencurrentdatabase (WsSettings.[path_database].Offset(0, 1).Value)
+
+    '***************************************************************
+    'Stats sur Analyse MCA
+    'Pour les tests et permettre une vérification, écriture des requêtes dans l'onglet caché "Param" avant chaque lancement
+    'pour identifier plus facilement une requête et donc une regle de gestion qui perturbe le traitement
+    '*******************************************************
+    WsParam.Columns("CA:CG").Delete shift:=xlToLeft
+    'Construction des requêtes SQL à la volée en stockant les informations dans un tableau et la classe C_Critere
+    i = 1
+    'WkMacro.Activate
+    Do While WsCritStat.[Rng_Stat_Name].Offset(i, 0) <> ""
+        Set Selectionneur = New C_Critere
+        Selectionneur.StatName = Trim(WsCritStat.[Rng_Stat_Name].Offset(i, 0))
+        Selectionneur.MCAAnalysisCrit = WsCritStat.[Rng_MCA_Analysis_Critere].Offset(i, 0)
+        Selectionneur.MCACommentCrit = WsCritStat.[Rng_MCA_Comment_Critere].Offset(i, 0)
+        Selectionneur.MCAExeDateCrit = WsCritStat.[Rng_MCA_Exe_Date_Critere].Offset(i, 0)
+        Selectionneur.MCADelayCrit = WsCritStat.[Rng_MCA_Delay_Critere].Offset(i, 0)
+        Selectionneur.OnboardingCrit = WsCritStat.[Rng_Onboarding_Critere].Offset(i, 0)
+        Selectionneur.OnboardingDateCrit = WsCritStat.[Rng_Onboarding_Date_Critere].Offset(i, 0)
+        Selectionneur.OnboardingCommentCrit = WsCritStat.[Rng_Onboarding_Comment_Critere].Offset(i, 0)
+        Selectionneur.MCAClosingDateCrit = WsCritStat.[Rng_MCA_Closing_Date_Critere].Offset(i, 0)
+        DicAnaMCAStat.Add i - 1, Selectionneur
+        i = i + 1
+    Loop
+    i = 0
+    Application.ScreenUpdating = True
+    Log.Info "Création des query d'après l'onglet Regle Pour Stats"
+    Application.StatusBar = "Lancement des requêtes SQL d'analyse..."
+    Application.ScreenUpdating = False
+    
+    'Récupération des règles de gestion et lancement des query
+    w = 1
+    
+    For y = 0 To DicAnaMCAStat.Count - 1
+        'Set Selectionneur = DicAnaMCAStat(y)
+        'iTestMultipleVariable = False
+        sQueryUpdate = ""
+        'sQueryUpdateComplement = ""
+        sQueryUpdate = "UPDATE [T_Analyse_MCA] SET [T_Analyse_MCA].[Indicateurs] = [T_Analyse_MCA].[Indicateurs] & """ & DicAnaMCAStat(y).StatName & ","""
+
+        If DicAnaMCAStat(y).MCAAnalysisCrit <> "" Then
+            If InStr(DicAnaMCAStat(y).MCAAnalysisCrit, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicAnaMCAStat(y).MCAAnalysisCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Analysis]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAAnalysisCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Analysis]) not like """ & Right(DicAnaMCAStat(y).MCAAnalysisCrit, Len(DicAnaMCAStat(y).MCAAnalysisCrit) - 2) & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Analysis]) Like """ & DicAnaMCAStat(y).MCAAnalysisCrit & """)"
+                    End If
+                Else
+                    If DicAnaMCAStat(y).MCAAnalysisCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Analysis]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAAnalysisCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Analysis]) not like """ & DicAnaMCAStat(y).MCAAnalysisCrit & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Analysis]) Like """ & DicAnaMCAStat(y).MCAAnalysisCrit & """)"
+                    End If
+                    
+                End If
+            Else
+                tTableau = Split(DicAnaMCAStat(y).MCAAnalysisCrit, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Analysis]) Like """ & tTableau(0) & """)"
+                Else
+                    sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Analysis]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Analyse_MCA].[MCA Analysis]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicAnaMCAStat(y).MCACommentCrit <> "" Then 'Alors on rajouter le champ dans les critères de sélection
+             If InStr(DicAnaMCAStat(y).MCACommentCrit, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicAnaMCAStat(y).MCACommentCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Comment]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCACommentCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Comment]) not like """ & Right(DicAnaMCAStat(y).MCACommentCrit, Len(DicAnaMCAStat(y).MCACommentCrit) - 2) & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Comment]) Like """ & DicAnaMCAStat(y).MCACommentCrit & """)"
+                    End If
+                Else
+                    If DicAnaMCAStat(y).MCACommentCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Comment]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCACommentCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Comment]) not like """ & Right(DicAnaMCAStat(y).MCACommentCrit, Len(DicAnaMCAStat(y).MCACommentCrit) - 2) & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Comment]) Like """ & DicAnaMCAStat(y).MCACommentCrit & """)"
+                    End If
+                End If
+            Else
+                tTableau = Split(DicAnaMCAStat(y).MCACommentCrit, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Comment]) Like """ & tTableau(0) & """)"
+                Else
+                     sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Comment]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Analyse_MCA].[MCA Comment]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicAnaMCAStat(y).MCAExeDateCrit <> "" Then 'Alors on rajouter le champ dans les critères de sélection
+             If InStr(DicAnaMCAStat(y).MCAExeDateCrit, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicAnaMCAStat(y).MCAExeDateCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Execution Date]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAExeDateCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Execution Date]) <>#" & Format(CDate(Right(DicAnaMCAStat(y).MCAExeDateCrit, Len(DicAnaMCAStat(y).MCAExeDateCrit) - 2)), "mm/dd/yyyy") & "#)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAExeDateCrit, 2) = ">=" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Execution Date]) >=#" & Format(CDate(Right(DicAnaMCAStat(y).MCAExeDateCrit, Len(DicAnaMCAStat(y).MCAExeDateCrit) - 2)), "mm/dd/yyyy") & "#)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Execution Date]) Like #" & Format(CDate(DicAnaMCAStat(y).MCAExeDateCrit), "mm/dd/yyyy") & """#)"
+                    End If
+                Else
+                    If DicAnaMCAStat(y).MCAExeDateCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Execution Date]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAExeDateCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Execution Date]) <>#" & Format(CDate(Right(DicAnaMCAStat(y).MCAExeDateCrit, Len(DicAnaMCAStat(y).MCAExeDateCrit) - 2)), "mm/dd/yyyy") & "#)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAExeDateCrit, 2) = ">=" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Execution Date]) >=#" & Format(CDate(Right(DicAnaMCAStat(y).MCAExeDateCrit, Len(DicAnaMCAStat(y).MCAExeDateCrit) - 2)), "mm/dd/yyyy") & "#)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Execution Date]) like #" & Format(CDate(DicAnaMCAStat(y).MCAExeDateCrit), "mm/dd/yyyy") & "#)"
+                    End If
+                End If
+            Else
+                tTableau = Split(DicAnaMCAStat(y).MCAExeDateCrit, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Execution Date]) Like """ & tTableau(0) & """)"
+                Else
+                     sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Execution Date]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Analyse_MCA].[MCA Execution Date]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+               
+        If DicAnaMCAStat(y).MCADelayCrit <> "" Then
+             If InStr(DicAnaMCAStat(y).MCADelayCrit, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicAnaMCAStat(y).MCADelayCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Delay]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCADelayCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Delay]) not like """ & Right(DicAnaMCAStat(y).MCADelayCrit, Len(DicAnaMCAStat(y).MCADelayCrit) - 2) & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Delay]) Like """ & DicAnaMCAStat(y).MCADelayCrit & """)"
+                    End If
+                Else
+                    If DicAnaMCAStat(y).MCADelayCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Delay]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCADelayCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Delay]) not like """ & DicAnaMCAStat(y).MCADelayCrit & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Delay]) Like """ & DicAnaMCAStat(y).MCADelayCrit & """)"
+                    End If
+                End If
+            Else
+                tTableau = Split(DicAnaMCAStat(y).MCADelayCrit, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Delay]) Like """ & tTableau(0) & """)"
+                Else
+                     sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Delay]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Analyse_MCA].[MCA Delay]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+            If DicAnaMCAStat(y).OnboardingCrit <> "" Then
+                If InStr(DicAnaMCAStat(y).OnboardingCrit, ",") = 0 Then 'si une seule valeur, on complète la query
+                    If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                        If DicAnaMCAStat(y).OnboardingCrit = "is null" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).OnboardingCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding]) not like """ & Right(DicAnaMCAStat(y).OnboardingCrit, Len(DicAnaMCAStat(y).OnboardingCrit) - 2) & """)"
+                        Else
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding]) Like """ & DicAnaMCAStat(y).OnboardingCrit & """)"
+                        End If
+                    Else
+                        If DicAnaMCAStat(y).OnboardingCrit = "is null" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).OnboardingCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding]) not like """ & DicAnaMCAStat(y).OnboardingCrit & """)"
+                        Else
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding]) Like """ & DicAnaMCAStat(y).OnboardingCrit & """)"
+                        End If
+                End If
+               
+                Else
+                    tTableau = Split(DicAnaMCAStat(y).OnboardingCrit, ",") 'split des différentes valeurs à intégrer dans le filtre
+                    
+                    'premiere ligne du tableau
+                    If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding]) Like """ & tTableau(0) & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                    End If
+                    'autres lignes
+                    For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                            If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                            sQueryUpdate = sQueryUpdate & " or ([T_Analyse_MCA].[Onboarding]) Like """ & tTableau(t) & """"
+                    Next t
+                sQueryUpdate = sQueryUpdate & ")"
+                End If
+        Erase tTableau
+        End If
+        
+        If DicAnaMCAStat(y).OnboardingDateCrit <> "" Then
+             If InStr(DicAnaMCAStat(y).OnboardingDateCrit, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicAnaMCAStat(y).OnboardingDateCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding Date]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCADelayCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding Date]) <>#" & Format(CDate(Right(DicAnaMCAStat(y).OnboardingDateCrit, Len(DicAnaMCAStat(y).OnboardingDateCrit) - 2)), "mm/dd/yyyy") & "#)"
+                        ElseIf Left(DicAnaMCAStat(y).MCADelayCrit, 2) = ">=" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding Date]) >=#" & Format(CDate(Right(DicAnaMCAStat(y).OnboardingDateCrit, Len(DicAnaMCAStat(y).OnboardingDateCrit) - 2)), "mm/dd/yyyy") & "#)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding Date]) Like #" & Format(CDate(DicAnaMCAStat(y).OnboardingDateCrit), "mm/dd/yyyy") & "#)"
+                    End If
+                Else
+                    If DicAnaMCAStat(y).OnboardingDateCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding Date]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).OnboardingDateCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding Date]) <>#" & Format(CDate(Right(DicAnaMCAStat(y).OnboardingDateCrit, Len(DicAnaMCAStat(y).OnboardingDateCrit) - 2)), "mm/dd/yyyy") & "#)"
+                        ElseIf Left(DicAnaMCAStat(y).OnboardingDateCrit, 2) = ">=" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding Date]) >=#" & Format(CDate(Right(DicAnaMCAStat(y).OnboardingDateCrit, Len(DicAnaMCAStat(y).OnboardingDateCrit) - 2)), "mm/dd/yyyy") & "#)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding Date]) Like #" & Format(CDate(DicAnaMCAStat(y).OnboardingDateCrit), "mm/dd/yyyy") & "#)"
+                    End If
+                End If
+            Else
+                tTableau = Split(DicAnaMCAStat(y).OnboardingDateCrit, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding Date]) Like #" & tTableau(0) & "#)"
+                Else
+                     sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding Date]) Like #" & tTableau(0) & "#" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Analyse_MCA].[Onboarding Date]) Like #" & tTableau(t) & "#"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicAnaMCAStat(y).OnboardingCommentCrit <> "" Then
+             If InStr(DicAnaMCAStat(y).OnboardingCommentCrit, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicAnaMCAStat(y).OnboardingCommentCrit = "is null" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding Comment]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).OnboardingCommentCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding Comment]) not like """ & Right(DicAnaMCAStat(y).OnboardingCommentCrit, Len(DicAnaMCAStat(y).OnboardingCommentCrit) - 2) & """)"
+                        Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding Comment]) Like """ & DicAnaMCAStat(y).OnboardingCommentCrit & """)"
+                    End If
+                Else
+                    If DicAnaMCAStat(y).OnboardingCommentCrit = "is null" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding Comment]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).OnboardingCommentCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding Comment]) not like """ & DicAnaMCAStat(y).OnboardingCommentCrit & """)"
+                        Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding Comment]) Like """ & DicAnaMCAStat(y).OnboardingCommentCrit & """)"
+                    End If
+                End If
+            Else
+                tTableau = Split(DicAnaMCAStat(y).OnboardingCommentCrit, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[Onboarding Comment]) Like """ & tTableau(0) & """)"
+                Else
+                     sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[Onboarding Comment]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Analyse_MCA].[Onboarding Comment]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicAnaMCAStat(y).MCAClosingDateCrit <> "" Then
+             If InStr(DicAnaMCAStat(y).MCAClosingDateCrit, ",") = 0 Then 'si une seule valeur, on complète la query
+                 If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicAnaMCAStat(y).MCAClosingDateCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Closing Date]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAClosingDateCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Closing Date]) <>#" & CDate(Right(DicAnaMCAStat(y).MCAClosingDateCrit, Len(DicAnaMCAStat(y).MCAClosingDateCrit) - 2)) & "#)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAClosingDateCrit, 2) = ">=" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Closing Date]) >=#" & CDate(Right(DicAnaMCAStat(y).MCAClosingDateCrit, Len(DicAnaMCAStat(y).MCAClosingDateCrit) - 2)) & "#)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Closing Date]) Like #" & CDate(DicAnaMCAStat(y).MCAClosingDateCrit) & "#)"
+                    End If
+                Else
+                    If DicAnaMCAStat(y).MCAClosingDateCrit = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Closing Date]) is Null)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAClosingDateCrit, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Closing Date]) <>#" & CDate(Right(DicAnaMCAStat(y).MCAClosingDateCrit, Len(DicAnaMCAStat(y).MCAClosingDateCrit) - 2)) & "#)"
+                        ElseIf Left(DicAnaMCAStat(y).MCAClosingDateCrit, 2) = ">=" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Closing Date]) >=#" & CDate(Right(DicAnaMCAStat(y).MCAClosingDateCrit, Len(DicAnaMCAStat(y).MCAClosingDateCrit) - 2)) & "#)"
+                        Else
+                            sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Closing Date]) Like #" & CDate(DicAnaMCAStat(y).MCAClosingDateCrit) & "#)"
+                    End If
+                End If
+            Else
+                tTableau = Split(DicAnaMCAStat(y).MCAClosingDateCrit, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Analyse_MCA].[MCA Closing Date]) Like #" & tTableau(0) & "#)"
+                Else
+                     sQueryUpdate = sQueryUpdate & " and (([T_Analyse_MCA].[MCA Closing Date]) Like #" & tTableau(0) & "#" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Analyse_MCA].[MCA Closing Date]) Like #" & tTableau(t) & "#"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+              
+        iNbRec = 0
+        iNbRec2 = 0
+        For i = 1 To Len(sQueryUpdate)
+            If Mid(sQueryUpdate, i, 1) = "(" Then iNbRec = iNbRec + 1
+            If Mid(sQueryUpdate, i, 1) = ")" Then iNbRec2 = iNbRec2 + 1
+        Next i
+        If iNbRec > iNbRec2 Then sQueryUpdate = sQueryUpdate & ")"
+        If iNbRec < iNbRec2 Then sQueryUpdate = Left(sQueryUpdate, Len(sQueryUpdate) - 1)
+                      
+        'Recopie des requêtes dans l'onglet parametre
+        WsParam.Range("CA1").Offset(w, 0).Value = sQueryUpdate
+
+        w = w + 1
+
+        bd.Execute sQueryUpdate
+    Next y
+    
+    'Formatage des lignes de recopie des query dans l'onglet Param
+    'ligne utiles uniquement pour analyse des résultats
+    WsParam.Range("CA2").Copy
+    Columns("CA").PasteSpecial Paste:=xlPasteFormats, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+    Application.CutCopyMode = False
+    
+    'Désactivé le 03/12/2015 : Call GenerationTop
+    'Désormais, il faut récupérer la liste directement du fichier excel
+          Call Import_Top_30
+          
+    'Import des data pour Stats (onglet Data)
+    Call Import_Data_Report_MCA(5, "T_Import_Data_Pour_Stats", "TableData")
+    
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    'Mise à jour de la table pour les stats et l'historique au niveau des Is MCA, Is MW et Comment
+    bd.Execute "Delete * from T_Data_Pour_Stats"
+    bd.QueryDefs("Q_Append_Data_Pour_Stats").Execute
+    
+    bd.Execute "Delete * from T_List_Sales_By_ShortNameCTPY" 'Liste les Sales associés par Short Name Client
+    bd.QueryDefs("Q_Append_List_Sales_By_ShortNameCTPY").Execute
+    bd.Execute "Delete * from T_List_Short_Name_1_Area" ' Définit les Clients n'ayant qu'un seul Sales (et donc une seule zone Geo)
+    bd.QueryDefs("Q_Append_List_Short_Name_1_Area").Execute
+    bd.Execute "Delete * from T_List_Short_Name_Multi_Area" ' Définit les Clients avec plusieurs Sales (et donc plusieurs zones Geo)
+    bd.QueryDefs("Q_Append_List_Short_Name_Multi_Area").Execute
+
+        'Traitement de la zone Géographique
+        'Par défaut, la zone Geo est déterminée par le GOP via Q_Append_Import_Data_Pour_Stats
+        'Nous updatons la zone_Geographique aen fonction de la présence de Sales habituellement sur le short name
+        bd.QueryDefs("Q_Update_GeoZone_Via_Sales_Unique").Execute
+        bd.QueryDefs("Q_Update_GeoZone_Via_Sales_Multiple").Execute
+        bd.QueryDefs("Q_Update_GeoZone_Via_Sales_Multiple_2").Execute
+        bd.QueryDefs("Q_Update_GeoZone_Banques").Execute
+
+    
+    bd.QueryDefs("Q_Update_Deals_Histo").Execute
+    bd.QueryDefs("Q_Append_Histo_Report_MCA_All").Execute
+    
+    'Génération des tables de stats sur la base du Report MCA Analysé (onglet Data)
+    '***************************************************************
+    'Stats sur Analyse MCA
+    'Pour les tests et permettre une vérification, écriture des requêtes dans l'onglet caché "Param" avant chaque lancement
+    'pour identifier plus facilement une requête et donc une regle de gestion qui perturbe le traitement
+    '*******************************************************
+    WsParam.Columns("DA:DG").Delete shift:=xlToLeft
+    'Construction des requêtes SQL à la volée en stockant les informations dans un tableau et la classe C_Critere
+    i = 1
+    'WkMacro.Activate
+    Do While WsCritStat.[Rng_Stat_SuiviFO].Offset(i, 0) <> ""
+        Set SelectFO = New C_Crit_WeeklyFO
+        SelectFO.StatNom = Trim(WsCritStat.[Rng_Stat_SuiviFO].Offset(i, 0))
+        SelectFO.Electro = WsCritStat.[Rng_Sat_FO_Electro].Offset(i, 0)
+        SelectFO.isMCA = WsCritStat.[Rng_Sat_FO_isMCA].Offset(i, 0)
+        SelectFO.isMCAEli = WsCritStat.[Rng_Sat_FO_isMCAEli].Offset(i, 0)
+        SelectFO.isMWEli = WsCritStat.[Rng_Sat_FO_isMW_Eli].Offset(i, 0)
+        
+        DicReportMCAStat.Add i - 1, SelectFO
+        i = i + 1
+    Loop
+    i = 0
+    Application.ScreenUpdating = True
+    Log.Info "Création des query d'après l'onglet Regle Pour Stats"
+    Application.StatusBar = "Lancement des requêtes SQL d'analyse..."
+    Application.ScreenUpdating = False
+    
+    'Récupération des règles de gestion et lancement des query
+    w = 1
+    
+    For y = 0 To DicReportMCAStat.Count - 1
+        'Set Selectionneur = DicAnaMCAStat(y)
+        'iTestMultipleVariable = False
+        sQueryUpdate = ""
+        'sQueryUpdateComplement = ""
+        sQueryUpdate = "UPDATE [T_Data_Pour_Stats] SET [T_Data_Pour_Stats].[Indicateurs] = [T_Data_Pour_Stats].[Indicateurs] & """ & DicReportMCAStat(y).StatNom & ","""
+
+        If DicReportMCAStat(y).Electro <> "" Then
+            If InStr(DicReportMCAStat(y).Electro, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicReportMCAStat(y).Electro = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Electronic]) is Null)"
+                        ElseIf Left(DicReportMCAStat(y).Electro, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Electronic]) """ & DicReportMCAStat(y).Electro & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Electronic]) Like """ & DicReportMCAStat(y).Electro & """)"
+                    End If
+                Else
+                    If DicReportMCAStat(y).Electro = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Electronic]) is Null)"
+                        ElseIf Left(DicReportMCAStat(y).Electro, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Electronic]) """ & DicReportMCAStat(y).Electro & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Electronic]) Like """ & DicReportMCAStat(y).Electro & """)"
+                    End If
+                    
+                End If
+            Else
+                tTableau = Split(DicReportMCAStat(y).Electro, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Electronic]) Like """ & tTableau(0) & """)"
+                Else
+                    sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Electronic]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Data_Pour_Stats].[Electronic]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicReportMCAStat(y).isMCA <> "" Then
+            If InStr(DicReportMCAStat(y).isMCA, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicReportMCAStat(y).isMCA = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MCA]) is Null)"
+                        ElseIf Left(DicReportMCAStat(y).isMCA, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MCA]) """ & DicReportMCAStat(y).isMCA & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MCA]) Like """ & DicReportMCAStat(y).isMCA & """)"
+                    End If
+                Else
+                    If DicReportMCAStat(y).isMCA = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MCA]) is Null)"
+                        ElseIf Left(DicReportMCAStat(y).isMCA, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MCA]) """ & DicReportMCAStat(y).isMCA & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MCA]) Like """ & DicReportMCAStat(y).isMCA & """)"
+                    End If
+                    
+                End If
+            Else
+                tTableau = Split(DicReportMCAStat(y).isMCA, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MCA]) Like """ & tTableau(0) & """)"
+                Else
+                    sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MCA]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Data_Pour_Stats].[Is MCA]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicReportMCAStat(y).isMCAEli <> "" Then
+            If InStr(DicReportMCAStat(y).isMCAEli, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicReportMCAStat(y).isMCAEli = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MCA Eligible]) is Null)"
+                        ElseIf Left(DicReportMCAStat(y).isMCAEli, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MCA Eligible]) """ & DicReportMCAStat(y).isMCAEli & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MCA Eligible]) Like """ & DicReportMCAStat(y).isMCAEli & """)"
+                    End If
+                Else
+                    If DicReportMCAStat(y).isMCAEli = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MCA Eligible]) is Null)"
+                        ElseIf Left(DicReportMCAStat(y).isMCAEli, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MCA Eligible]) """ & DicReportMCAStat(y).isMCAEli & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MCA Eligible]) Like """ & DicReportMCAStat(y).isMCAEli & """)"
+                    End If
+                    
+                End If
+            Else
+                tTableau = Split(DicReportMCAStat(y).isMCAEli, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MCA Eligible]) Like """ & tTableau(0) & """)"
+                Else
+                    sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MCA Eligible]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Data_Pour_Stats].[Is MCA Eligible]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+        
+        If DicReportMCAStat(y).isMWEli <> "" Then
+            If InStr(DicReportMCAStat(y).isMWEli, ",") = 0 Then 'si une seule valeur, on complète la query
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    If DicReportMCAStat(y).isMWEli = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MW Eligible]) is Null)"
+                        ElseIf Left(DicReportMCAStat(y).isMWEli, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MW Eligible]) """ & DicReportMCAStat(y).isMWEli & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MW Eligible]) Like """ & DicReportMCAStat(y).isMWEli & """)"
+                    End If
+                Else
+                    If DicReportMCAStat(y).isMWEli = "is null" Then
+                        sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MW Eligible]) is Null)"
+                        ElseIf Left(DicReportMCAStat(y).isMWEli, 2) = "<>" Then
+                            sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MW Eligible]) """ & DicReportMCAStat(y).isMWEli & """)"
+                    Else
+                        sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MW Eligible]) Like """ & DicReportMCAStat(y).isMWEli & """)"
+                    End If
+                    
+                End If
+            Else
+                tTableau = Split(DicReportMCAStat(y).isMWEli, ",") 'split des différentes valeurs à intégrer dans le filtre
+                'premiere ligne du tableau
+                If InStr(sQueryUpdate, "WHERE") = 0 Then 'test de la présence du where
+                    sQueryUpdate = sQueryUpdate & " WHERE ((([T_Data_Pour_Stats].[Is MW Eligible]) Like """ & tTableau(0) & """)"
+                Else
+                    sQueryUpdate = sQueryUpdate & " and (([T_Data_Pour_Stats].[Is MW Eligible]) Like """ & tTableau(0) & """" 'le premier critère va dans la requête initiale"
+                End If
+                'autres lignes
+                For t = 1 To UBound(tTableau) 'pour la suite du tableau on renseigne le complément de la query
+                        If Left(tTableau(t), 1) = " " Then tTableau(t) = Right(tTableau(t), Len(tTableau(t)) - 1)
+                        sQueryUpdate = sQueryUpdate & " or ([T_Data_Pour_Stats].[Is MW Eligible]) Like """ & tTableau(t) & """"
+                Next t
+            sQueryUpdate = sQueryUpdate & ")"
+            End If
+        Erase tTableau
+        End If
+          
+        iNbRec = 0
+        iNbRec2 = 0
+        For i = 1 To Len(sQueryUpdate)
+            If Mid(sQueryUpdate, i, 1) = "(" Then iNbRec = iNbRec + 1
+            If Mid(sQueryUpdate, i, 1) = ")" Then iNbRec2 = iNbRec2 + 1
+        Next i
+        If iNbRec > iNbRec2 Then sQueryUpdate = sQueryUpdate & ")"
+        If iNbRec < iNbRec2 Then sQueryUpdate = Left(sQueryUpdate, Len(sQueryUpdate) - 1)
+                      
+        'Recopie des requêtes dans l'onglet parametre
+        WsParam.Range("DA1").Offset(w, 0).Value = sQueryUpdate
+
+        w = w + 1
+
+        bd.Execute sQueryUpdate
+    Next y
+    
+    'Formatage des lignes de recopie des query dans l'onglet Param
+    'ligne utiles uniquement pour analyse des résultats
+    WsParam.Range("DA2").Copy
+    Columns("DA").PasteSpecial Paste:=xlPasteFormats, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+    Application.CutCopyMode = False
+
+    
+    Application.ScreenUpdating = True
+    Log.Info "Intégration du fichier Report MCA dans la base pour traitement"
+    Application.ScreenUpdating = False
+    
+    'Génération des statistiques qui serviront au Report Suivi Weekly Volume pour le FO
+    'Stats Globales par country basées sur Analyse MCA
+        
+          Application.ScreenUpdating = True
+          Application.StatusBar = "Réalisation des statistiques Globales par Zone Géographique..."
+          Application.ScreenUpdating = False
+          
+          'Globale by Area
+            bd.Execute "Delete * from T_Stats_Globales_By_Area where Date =#" & Format((MaDate), "mm/dd/yyyy") & "#"
+            Call StatGlobalesByArea("T_Stats_Globales_By_Area")
+    
+          WkMacro.Activate
+
+          'Réalisation des statistiques Globales par 'Area' client et par zone...
+          Application.ScreenUpdating = True
+          Application.StatusBar = "Réalisation des statistiques Globales par 'Area' Client et par zone..."
+          Application.ScreenUpdating = False
+test:
+          MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+          Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+          
+            'Globale
+            bd.Execute "Delete * from T_Stats_Globales where Date =#" & Format((MaDate), "mm/dd/yyyy") & "#"
+            Call StatGlobalesReportMCA("T_Stats_Globales", "Q_Analyse_Stats_Report_MCA")
+            
+            'Zone Amer
+            bd.Execute "Delete * from T_Stats_Top_Amer_by_Area where Date =#" & Format((MaDate), "mm/dd/yyyy") & "#"
+            Call StatGlobalesReportMCA("T_Stats_Top_Amer_by_Area", "Q_Analyse_Stats_Report_MCA_Top_Amer")
+            
+            'Zone Asie
+            bd.Execute "Delete * from T_Stats_Top_Asie_by_Area where Date =#" & Format((MaDate), "mm/dd/yyyy") & "#"
+            Call StatGlobalesReportMCA("T_Stats_Top_Asie_by_Area", "Q_Analyse_Stats_Report_MCA_Top_Asie")
+
+            'Zone Europe
+            bd.Execute "Delete * from T_Stats_Top_Europe_by_Area where Date =#" & Format((MaDate), "mm/dd/yyyy") & "#"
+            Call StatGlobalesReportMCA("T_Stats_Top_Europe_by_Area", "Q_Analyse_Stats_Report_MCA_Top_Europe")
+    
+    'Génération des statistiques qui serviront au Report Weekly
+    'En Globale (qui pourrait être le seul avec un report dynamique mais empêcherait une analyse éventuelle de l'évolution des TOP 30)
+    'Regroupement des Managing Short Name et des Short Name Client associés
+    bd.Execute "Delete * from T_Liste_Short_Name"
+    bd.Execute "Q_Append_Liste_Short_Name"
+    bd.Execute "Delete * from T_Liste_Short_Name_Managing_et_Client"
+    bd.Execute "Q_Append_Liste_Short_Name_Managing_et_Client"
+    
+    Call SalesByClient
+    
+    'Réalisation des statistiques par produit et par client sur chaque zone...
+        Application.ScreenUpdating = True
+        Application.StatusBar = "Réalisation des statistiques par produit et par client sur chaque zone..."
+        Application.ScreenUpdating = False
+
+    'Globale
+    'Call StatsByProduct("T_Stats_Globales_By_Product_Temp", "T_Liste_Short_Name")
+    'bd.Execute "Q_Append_Stats_Globales_By_Product"
+    bd.Execute "Delete * from T_Stats_Globales_By_Product_temp"
+    Call StatGlobalesByProduct2("T_Stats_Globales_By_Product_temp", "T_Liste_Short_Name_Managing_et_Client")
+    bd.Execute ("Delete * from T_Stats_Globales_by_Product where [Date]=#" & Format(MaDate, "mm/dd/yyyy") & "#")
+    bd.Execute "Q_Append_Stats_Globale_By_Product"
+    
+    'Amer
+    'Call StatsByProduct("T_Stats_Top_Amer_By_Product_Temp", "T_Top_Amer")
+    'bd.Execute "Q_Append_Stats_Amer_By_Product"
+    bd.Execute "Delete * from T_Stats_Top_Amer_By_Product_temp"
+    Call StatGlobalesByProduct2("T_Stats_Top_Amer_By_Product_temp", "T_Top_Amer")
+    bd.Execute ("Delete * from T_Stats_Top_Amer_by_Product where [Date]=#" & Format(MaDate, "mm/dd/yyyy") & "#")
+    bd.Execute "Q_Append_Stats_Amer_By_Product"
+    
+    'Asia
+    'Call StatsByProduct("T_Stats_Top_Asie_By_Product_Temp", "T_Top_Asia")
+    'bd.Execute "Q_Append_Stats_Asie_By_Product"
+    bd.Execute "Delete * from T_Stats_Top_Asie_By_Product_temp"
+    Call StatGlobalesByProduct2("T_Stats_Top_Asie_By_Product_temp", "T_Top_Asia")
+    bd.Execute ("Delete * from T_Stats_Top_Asie_by_Product where [Date]=#" & Format(MaDate, "mm/dd/yyyy") & "#")
+    bd.Execute "Q_Append_Stats_Asie_By_Product"
+   
+    'Europe
+    'Call StatsByProduct("T_Stats_Top_Europe_By_Product_Temp", "T_Top_Europe")
+    'bd.Execute "Q_Append_Stats_Europe_By_Product"
+    bd.Execute "Delete * from T_Stats_Top_Europe_By_Product_temp"
+    Call StatGlobalesByProduct2("T_Stats_Top_Europe_By_Product_temp", "T_Top_Europe")
+    bd.Execute ("Delete * from T_Stats_Top_Europe_by_Product where [Date]=#" & Format(MaDate, "mm/dd/yyyy") & "#")
+    bd.Execute "Q_Append_Stats_Europe_By_Product"
+    
+    'Agregation des lignes dans les table Top_Geo_Zone_By_Product
+    'bd.Execute "Q_Append_Stats_Globale_By_Product"
+    'bd.Execute "Q_Append_Stats_Amer_By_Product"
+    'bd.Execute "Q_Append_Stats_Asie_By_Product"
+    'bd.Execute "Q_Append_Stats_Europe_By_Product"
+    
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Réalisation des statistiques Globales par pays..."
+    Application.ScreenUpdating = False
+    
+    Set dico_entete = Nothing
+    Set DicAnaMCAStat = Nothing
+    Set DicReportMCAStat = Nothing
+    
+
+    Application.DisplayStatusBar = statusBarInitial
+    Call Construction_Reporting
+    
+    'MsgBox "Done"
+    
+    Exit Sub
+    Resume
+    
+GestErr:
+    MsgBox Error
+    Application.DisplayStatusBar = statusBarInitial
+    Set dico_entete = Nothing
+    Set DicAnaMCAStat = Nothing
+    Set DicReportMCAStat = Nothing
+    
+End Sub
