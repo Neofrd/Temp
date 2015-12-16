@@ -1,0 +1,2358 @@
+Option Explicit
+Public Function Key_Corrected(sInitKey As String)
+
+    Key_Corrected = Left(sInitKey, Len(sInitKey) - InStr(1, StrReverse(sInitKey), "-"))
+    'Cle_corrigee: Left([Key];Len([Key])-InStr(1;StrReverse([Key]);"-"))
+
+End Function
+
+Public Function StatGlobales(sDestination As String, sSource As String)
+    Dim WkMacro As Workbook
+    Dim bd As Database
+        
+    Dim rstSource As Recordset
+    Dim rstSource2 As Recordset
+    Dim rstDestination As Recordset
+    Dim MaDate As Date
+       
+    Dim i As Integer
+    Dim y As Integer
+    Dim iNbRec As Integer
+    Dim iNbRec2 As Integer
+    
+    Dim sCountry As String
+    
+    Application.DisplayStatusBar = True
+    Application.StatusBar = "Macro en cours..."
+    
+    MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+    
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    Set rstSource = bd.OpenRecordset("Select * from Q_List_Country")
+    rstSource.MoveLast
+    iNbRec = rstSource.RecordCount
+    rstSource.MoveFirst
+    
+    bd.Execute "Delete * from " & sDestination & " where Date =#" & Format((MaDate), "mm/dd/yyyy") & "#"
+    For i = 0 To iNbRec - 1
+        sCountry = rstSource![Zone_Geo_Deal]
+
+        Set rstSource2 = bd.OpenRecordset("Select * from " & sSource & " where [Zone_Geo_Deal]='" & sCountry & "'")
+           rstSource2.MoveLast
+           iNbRec2 = rstSource2.RecordCount
+           rstSource2.MoveFirst
+           
+           For y = 0 To iNbRec2 - 1
+                Set rstDestination = bd.OpenRecordset("Select * from " & sDestination)
+
+                rstDestination.AddNew
+                    rstDestination!Date = Format(MaDate, "dd/mm/yyyy")
+                    If sDestination <> "T_Stats_Globales_By_Area" Then rstDestination!Managing_Short_Name = rstSource2!Managing_Short_Name
+                    If sDestination <> "T_Stats_Globales_By_Area" Then rstDestination!Short_Name = rstSource2!Short_Name_Client
+                    rstDestination!Area = rstSource2!Zone_Geo_Deal
+                    rstDestination!Volume_Total = rstSource2![CountOfDeal Operation ID]
+                    rstDestination!Volume_No_Conf = rstSource2![Nb_No_Conf]
+                    rstDestination!Volume_No_Electro = rstSource2![Nb_No_Electro]
+                    rstDestination!Volume_Electro = rstSource2![Nb_MW] + rstSource2![Nb_DTCC] + rstSource2![Nb_SW]
+                    rstDestination!Dont_Volume_MW = rstSource2![Nb_MW]
+                    rstDestination!Dont_Volume_DTCC = rstSource2![Nb_DTCC]
+                    rstDestination!Dont_Volume_SW = rstSource2![Nb_SW]
+                    rstDestination!Volume_MCA = rstSource2![Nb_isMCA_Yes]
+                    rstDestination!Volume_No_MCA = rstSource2![Nb_isMCA_No]
+                    rstDestination!Volume_MCA_Eli = rstSource2![Nb_MCA_Eli]
+                    rstDestination!Volume_MCA_No_Eli = rstSource2![Nb_MCA_No_Eli]
+                    rstDestination!Volume_MW_Eli = rstSource2![Nb_MW_Eli]
+                    rstDestination!Volume_MW_No_Eli = rstSource2![Nb_MW_No_Eli]
+                    rstDestination!Volume_MCA_Eli_Vide = rstSource2![Nb_MCA_Eli_Vide]
+                    rstDestination!Volume_MW_Eli_Vide = rstSource2![Nb_MW_Eli_Vide]
+                    rstDestination!Volume_Electro_Undefined = rstSource2![Nb_Undefined]
+                    
+                rstDestination.Update
+            rstSource2.MoveNext
+            Next y
+    sCountry = ""
+    rstSource.MoveNext
+    Next i
+    
+    Set rstSource = Nothing
+    Set rstSource2 = Nothing
+    Set rstDestination = Nothing
+    
+End Function
+Public Function SalesByClient()
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    'Dim DicReportMCAStat As New Dictionary
+    Dim MaDate As Date
+    Dim rstSource As Recordset
+    Dim rstSource3 As Recordset
+    Dim rstSource4 As Recordset
+    Dim rstDestination As Recordset
+    Dim iNbRec As Integer
+    Dim iNbRec2 As Integer
+    Dim iNbRec3 As Integer
+    Dim i, y, j As Integer
+    
+    Dim sManaging As String
+    Dim sClient As String
+    Dim sSales As String
+    
+    
+    MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+    
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    
+    Set rstSource = bd.OpenRecordset("Select distinct [Managing_Short_Name] from T_Liste_Short_Name_Managing_et_Client")
+    rstSource.MoveLast
+    iNbRec = rstSource.RecordCount
+    rstSource.MoveFirst
+    
+    For i = 0 To iNbRec - 1 'boucle sur la managing
+        sManaging = "" & rstSource.Fields(0).Value
+        
+               
+            Set rstSource3 = bd.OpenRecordset("Select distinct[Short_Name_Client] from T_Liste_Short_Name_Managing_et_Client where [Managing_Short_Name]=""" & sManaging & """")
+            
+            rstSource3.MoveLast
+            iNbRec2 = rstSource3.RecordCount
+            rstSource3.MoveFirst
+            
+                If Not rstSource3.EOF Then
+                    For y = 0 To iNbRec2 - 1 'boucle sur les clients
+                    sClient = "" & rstSource3.Fields(0).Value
+                        'Boucle pour le Sales
+                        Set rstSource4 = bd.OpenRecordset("Select distinct [Sales Name] from Q_Union_List_Sales where [Short name Client]=""" & sClient & """")
+                        If Not rstSource4.EOF Then
+                            rstSource4.MoveLast
+                            iNbRec3 = rstSource4.RecordCount
+                            rstSource4.MoveFirst
+                            sSales = ""
+                                For j = 0 To iNbRec3 - 1
+                                    If Not IsNull(rstSource4.Fields(0).Value) And (rstSource4.Fields(0).Value <> "") Then
+                                        If InStr(sSales, rstSource4.Fields(0).Value) = 0 Or InStr(sSales, rstSource4.Fields(0).Value) = 0 Then
+                                            sSales = sSales & rstSource4.Fields(0).Value & ","
+                                        End If
+                                    End If
+                                rstSource4.MoveNext
+                                Next j
+                            If Right(sSales, 1) = "," Then sSales = Left(sSales, Len(sSales) - 1)
+                        End If
+                        
+                        Set rstSource4 = Nothing
+                        
+                        Set rstDestination = bd.OpenRecordset("Select * from T_Liste_Short_Name_Managing_et_Client where [Short_Name_Client]=""" & sClient & """")
+                        rstDestination.Edit
+                        rstDestination!sales = Left(sSales, 255)
+                        rstDestination.Update
+                    rstSource3.MoveNext
+                    Next y
+                End If
+    rstSource.MoveNext
+    Next i
+        
+End Function
+Public Function StatGlobalesReportMCA(sDestination As String, sSource As String)
+    
+    Dim WkMacro As Workbook
+    Dim bd As Database
+        
+    Dim rstSource As Recordset
+    Dim rstSource2 As Recordset
+    Dim rstSource3 As Recordset
+    Dim rstDestination As Recordset
+    Dim MaDate As Date
+    Dim i As Integer
+    Dim y As Integer
+    Dim iNbRec As Integer
+    Dim iNbRec2 As Integer
+    Dim sCountry As String
+    Dim sIndicateur As String
+    
+    Application.DisplayStatusBar = True
+    Application.StatusBar = "Macro en cours..."
+    
+    MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+    
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    
+    i = 1
+    'WkMacro.Activate
+    'Do While WsCritStat.[Rng_Stat_Name].Offset(i, 0) <> ""
+    '    DicReportMCAStat.Add i - 1, WsRDG.[Rng_Stat_Name].Offset(i, 0)
+    '    i = i + 1
+    'Loop
+    
+    
+    Set rstDestination = bd.OpenRecordset("Select * from " & sDestination)
+    
+    Set rstSource = bd.OpenRecordset("Select * from Q_List_Country")
+    rstSource.MoveLast
+    iNbRec = rstSource.RecordCount
+    rstSource.MoveFirst
+    
+    For i = 0 To iNbRec - 1
+        sCountry = rstSource![Zone_Geo_Deal]
+        Set rstSource2 = bd.OpenRecordset("Select * from " & sSource & " where [Zone_Geo_Deal]='" & sCountry & "'")
+        rstSource2.MoveLast
+        iNbRec2 = rstSource2.RecordCount
+        rstSource2.MoveFirst
+        For y = 0 To iNbRec2 - 1
+    
+            rstDestination.AddNew
+                rstDestination!Date = Format(MaDate, "dd/mm/yyyy")
+                rstDestination!Managing_Short_Name = rstSource2!Managing_Short_Name
+                rstDestination!Short_Name = rstSource2!Short_Name_Client
+                rstDestination!Area = rstSource2!Zone_Geo_Deal
+                
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """)") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                'rstDestination!Volume_Total = rstSource3.Fields(0).Value
+                If Not rstSource3.EOF Then rstDestination!Volume_Total = rstSource3.RecordCount Else rstDestination!Volume_Total = 0
+                
+                sIndicateur = "Volume No Conf"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_No_Conf = rstSource3.RecordCount Else rstDestination!Volume_No_Conf = 0
+                
+                sIndicateur = "Volume Electro"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_Electro = rstSource3.RecordCount Else rstDestination!Volume_Electro = 0
+                
+                sIndicateur = "Dont Volume MW"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Dont_Volume_MW = rstSource3.RecordCount Else rstDestination!Dont_Volume_MW = 0
+                
+                sIndicateur = "Dont Volume DTCC"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Dont_Volume_DTCC = rstSource3.RecordCount Else rstDestination!Dont_Volume_DTCC = 0
+                
+                sIndicateur = "Dont Volume SW"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Dont_Volume_SW = rstSource3.RecordCount Else rstDestination!Dont_Volume_SW = 0
+                
+                sIndicateur = "Volume No Electro"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_No_Electro = rstSource3.RecordCount Else rstDestination!Volume_No_Electro = 0
+                
+                sIndicateur = "Volume MCA"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_MCA = rstSource3.RecordCount Else rstDestination!Volume_MCA = 0
+                
+                sIndicateur = "Volume No MCA"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_No_MCA = rstSource3.RecordCount Else rstDestination!Volume_No_MCA = 0
+                
+                sIndicateur = "Volume Eli MCA"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_MCA_Eli = rstSource3.RecordCount Else rstDestination!Volume_MCA_Eli = 0
+                
+                sIndicateur = "Volume Eli MW"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_MW_Eli = rstSource3.RecordCount Else rstDestination!Volume_MW_Eli = 0
+                
+                sIndicateur = "Volume No Eli MW"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_MW_No_Eli = rstSource3.RecordCount Else rstDestination!Volume_MW_No_Eli = 0
+                
+                sIndicateur = "Volume No Eli MCA"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_MCA_No_Eli = rstSource3.RecordCount Else rstDestination!Volume_MCA_No_Eli = 0
+                
+                sIndicateur = "Volume MCA Eli Vide"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_MCA_Eli_Vide = rstSource3.RecordCount Else rstDestination!Volume_MCA_Eli_Vide = 0
+                
+                sIndicateur = "Volume Eli Vide MW"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_MW_Eli_Vide = rstSource3.RecordCount Else rstDestination!Volume_MW_Eli_Vide = 0
+                
+                sIndicateur = "Volume Undefined Electro"
+                Set rstSource3 = bd.OpenRecordset("Select * from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & sIndicateur & "*"")") ' GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                If Not rstSource3.EOF Then rstSource3.MoveLast
+                If Not rstSource3.EOF Then rstDestination!Volume_Electro_Undefined = rstSource3.RecordCount Else rstDestination!Volume_Electro_Undefined = 0
+                
+                                
+                'If Not rstSource3.EOF Then rstDestination!Volume_No_Conf = rstSource3.Fields(0).Value Else rstDestination!Volume_No_Conf = 0
+                
+                'For j = 1 To DicReportMCAStat.Count
+                '    Set rstSource3 = bd.OpenRecordset("Select count([Deal Operation ID]) from T_Data_Pour_Stats where [Zone_Geo_Deal]=""" & sCountry & """ and ([Short name Managing Entity]=""" & rstSource2![Managing_Short_Name] & """) and ([Short name Client]=""" & rstSource2![Short_Name_Client] & """) and ([Indicateurs] like ""*" & DicReportMCAStat(j) & "*"") GROUP BY T_Data_Pour_Stats.[Short name Managing Entity], T_Data_Pour_Stats.[Short name Client], T_Data_Pour_Stats.Zone_Geo_Deal, T_Data_Pour_Stats.Indicateurs")
+                '            Select Case DicReportMCAStat(j)
+                '                Case "Volume No Conf"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_No_Conf = rstSource3.Fields(0).Value Else rstDestination!Volume_No_Conf = 0
+                '                Case "Volume Electro"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_Electro = rstSource3.Fields(0).Value Else rstDestination!Volume_Electro = 0
+                '                Case "Dont Volume MW"
+                '                    If Not rstSource3.EOF Then rstDestination!Dont_Volume_MW = rstSource3.Fields(0).Value Else rstDestination!Dont_Volume_MW = 0
+                '                Case "Dont Volume DTCC"
+                '                    If Not rstSource3.EOF Then rstDestination!Dont_Volume_DTCC = rstSource3.Fields(0).Value Else rstDestination!Dont_Volume_DTCC = 0
+                '                Case "Dont Volume SW"
+                '                    If Not rstSource3.EOF Then rstDestination!Dont_Volume_SW = rstSource3.Fields(0).Value Else rstDestination!Dont_Volume_SW = 0
+                '                Case "Volume No Electro"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_No_Electro = rstSource3.Fields(0).Value Else rstDestination!Volume_No_Electro = 0
+                '                Case "Volume MCA"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_MCA = rstSource3.Fields(0).Value Else rstDestination!Volume_MCA = 0
+                '                Case "Volume No MCA"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_No_MCA = rstSource3.Fields(0).Value Else rstDestination!Volume_No_MCA = 0
+                '                Case "Volume MCA Eli"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_MCA_Eli = rstSource3.Fields(0).Value Else rstDestination!Volume_MCA_Eli = 0
+                '                Case "Volume MW Eli"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_MW_Eli = rstSource3.Fields(0).Value Else rstDestination!Volume_MW_Eli = 0
+                '                Case "Volume MW No Eli"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_MW_No_Eli = rstSource3.Fields(0).Value Else rstDestination!Volume_MW_No_Eli = 0
+                '                Case "Volume MCA No Eli"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_MCA_No_Eli = rstSource3.Fields(0).Value Else rstDestination!Volume_MCA_No_Eli = 0
+                '                Case "Volume MCA Eli Vide"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_MCA_Eli_Vide = rstSource3.Fields(0).Value Else rstDestination!Volume_MCA_Eli_Vide = 0
+                '                Case "Volume MW Eli Vide"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_MW_Eli_Vide = rstSource3.Fields(0).Value Else rstDestination!Volume_MW_Eli_Vide = 0
+                '                Case "Volume Electro Undefined"
+                '                    If Not rstSource3.EOF Then rstDestination!Volume_Electro_Undefined = rstSource3.Fields(0).Value Else rstDestination!Volume_Electro_Undefined = 0
+                '            End Select
+                'Next j
+                rstDestination.Update
+        rstSource2.MoveNext
+        Next y
+    rstSource.MoveNext
+    Next i
+    
+End Function
+
+Public Function StatGlobalesByArea(sDestination As String)
+    
+    Dim WkMacro As Workbook
+    Dim bd As Database
+        
+    Dim rstSource As Recordset
+    Dim rstSource3 As Recordset
+    Dim rstDestination As Recordset
+    Dim MaDate As Date
+    Dim i As Integer
+    Dim j As Integer
+    Dim iNbRec As Integer
+    Dim sCountry As String
+    Dim DicReportMCAStat As New Dictionary
+    
+    Application.DisplayStatusBar = True
+    Application.StatusBar = "Macro en cours..."
+    
+    MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+    
+    i = 1
+    'WkMacro.Activate
+    Do While WsCritStat.[Rng_Stat_SuiviFO].Offset(i, 0) <> ""
+        DicReportMCAStat.Add i - 1, WsRDG.[Rng_Stat_SuiviFO].Offset(i, 0)
+        i = i + 1
+    Loop
+    
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    
+    Set rstDestination = bd.OpenRecordset("Select * from " & sDestination)
+    
+    Set rstSource = bd.OpenRecordset("Select * from Q_List_Country")
+    rstSource.MoveLast
+    iNbRec = rstSource.RecordCount
+    rstSource.MoveFirst
+    
+    For i = 0 To iNbRec - 1
+        sCountry = rstSource![Zone_Geo_Deal]
+        'Set rstSource2 = bd.OpenRecordset("Select * from " & sSource & " where [Zone_Geo_Deal]='" & sCountry & "'")
+        'rstSource2.MoveLast
+        'iNbRec2 = rstSource2.RecordCount
+        'rstSource2.MoveFirst
+        'For y = 0 To iNbRec2 - 1
+
+            rstDestination.AddNew
+                rstDestination!Date = Format(MaDate, "dd/mm/yyyy")
+                rstDestination!Area = sCountry
+                
+                Set rstSource3 = bd.OpenRecordset("Select count([Deal Operation ID]) from T_Data_Pour_Stats where [Zone_Geo_Deal]='" & sCountry & "'")
+                rstDestination!Volume_Total = rstSource3.Fields(0).Value
+                
+                For j = 0 To DicReportMCAStat.Count - 1
+                    Set rstSource3 = bd.OpenRecordset("Select count([Deal Operation ID]) from T_Data_Pour_Stats where [Zone_Geo_Deal]='" & sCountry & "' and [Indicateurs] like ""*" & DicReportMCAStat(j) & "*""")
+                        Select Case Trim(DicReportMCAStat(j))
+                            Case "Volume No Conf"
+                                rstDestination!Volume_No_Conf = rstSource3.Fields(0).Value
+                            Case "Volume Electro"
+                                rstDestination!Volume_Electro = rstSource3.Fields(0).Value
+                            Case "Dont Volume MW"
+                                rstDestination!Dont_Volume_MW = rstSource3.Fields(0).Value
+                            Case "Dont Volume DTCC"
+                                rstDestination!Dont_Volume_DTCC = rstSource3.Fields(0).Value
+                            Case "Dont Volume SW"
+                                rstDestination!Dont_Volume_SW = rstSource3.Fields(0).Value
+                            Case "Volume No Electro"
+                                rstDestination!Volume_No_Electro = rstSource3.Fields(0).Value
+                            Case "Volume MCA"
+                                rstDestination!Volume_MCA = rstSource3.Fields(0).Value
+                            Case "Volume No MCA"
+                                rstDestination!Volume_No_MCA = rstSource3.Fields(0).Value
+                            Case "Volume Eli MCA"
+                                rstDestination!Volume_MCA_Eli = rstSource3.Fields(0).Value
+                            Case "Volume Eli MW"
+                                rstDestination!Volume_MW_Eli = rstSource3.Fields(0).Value
+                            Case "Volume No Eli MW"
+                                rstDestination!Volume_MW_No_Eli = rstSource3.Fields(0).Value
+                            Case "Volume No Eli MCA"
+                                rstDestination!Volume_MCA_No_Eli = rstSource3.Fields(0).Value
+                            Case "Volume Eli Vide MCA"
+                                rstDestination!Volume_MCA_Eli_Vide = rstSource3.Fields(0).Value
+                            Case "Volume Eli Vide MW"
+                                rstDestination!Volume_MW_Eli_Vide = rstSource3.Fields(0).Value
+                            Case "Volume Undefined Electro"
+                                rstDestination!Volume_Electro_Undefined = rstSource3.Fields(0).Value
+                            Case Else
+                                Err.Raise vbObjectError + 1, , "Stats undefined «" & DicReportMCAStat(j) & "»"
+                        End Select
+                Next j
+                rstDestination.Update
+        'rstSource2.MoveNext
+        'Next y
+    rstSource.MoveNext
+    Next i
+End Function
+
+
+Public Function StatGlobalesByProduct2(sDestination As String, sSource As String)
+    
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    
+    Dim rstSource As Recordset
+    Dim rstSource2 As Recordset
+    Dim rstSource3 As Recordset
+    Dim rstDestination As Recordset
+    Dim MaDate As Date
+    Dim i As Integer
+    Dim y As Integer
+    Dim iNbRec As Integer
+    Dim iNbRec2 As Integer
+    Dim sManaging As String
+    Dim sIndicateur As String
+    
+    
+    MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+    
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+       
+    bd.Execute "Delete * from " & sDestination & " where Date =#" & Format(MaDate, "mm/dd/yyyy") & "#"
+    Set rstDestination = bd.OpenRecordset("Select * from " & sDestination)
+    
+    Set rstSource = bd.OpenRecordset("Select distinct [Managing_Short_Name] from " & sSource)
+    rstSource.MoveLast
+    iNbRec = rstSource.RecordCount
+    rstSource.MoveFirst
+    
+    For i = 0 To iNbRec - 1
+        sManaging = rstSource.Fields(0).Value
+        
+        'Boucle sur le produit
+        Set rstSource2 = bd.OpenRecordset("Select * from T_Analyse_MCA where [Short name Managing Entity]=""" & sManaging & """ and (not [Reporting_Product] is null) and ([Total]<>0)")
+        
+        If Not rstSource2.EOF Then
+            rstSource2.MoveLast
+            iNbRec2 = rstSource2.RecordCount
+            rstSource2.MoveFirst
+                For y = 0 To iNbRec2 - 1
+                    rstDestination.AddNew
+                         rstDestination!Date = Format(MaDate, "dd/mm/yyyy")
+                         rstDestination!Managing_Short_Name = sManaging
+                         
+                         rstDestination!Products = rstSource2!Reporting_Product
+                         
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product]= """ & rstSource2!Reporting_Product & """) GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         rstDestination![Volume Equivalent Paper] = rstSource3.Fields(0).Value
+                        
+                         sIndicateur = "Volume MW Since June15"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume MW Since] = rstSource3.Fields(0).Value Else rstDestination![Volume MW Since] = 0
+                         
+                         sIndicateur = "Volume MW YtD"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume MW YtD] = rstSource3.Fields(0).Value Else rstDestination![Volume MW YtD] = 0
+                         
+                         sIndicateur = "Volume No Electro"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume No Electro] = rstSource3.Fields(0).Value Else rstDestination![Volume No Electro] = 0
+                         
+                         sIndicateur = "Volume MCA Since June15"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume MCA Since] = rstSource3.Fields(0).Value Else rstDestination![Volume MCA Since] = 0
+                         
+                         sIndicateur = "Volume MCA YtD"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume MCA YtD] = rstSource3.Fields(0).Value Else rstDestination![Volume MCA YtD] = 0
+                         
+                         sIndicateur = "Volume MCA In Progress"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume MCA In Progress] = rstSource3.Fields(0).Value Else rstDestination![Volume MCA In Progress] = 0
+                         
+                         sIndicateur = "Volume MW In Progress"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume MW In Progress] = rstSource3.Fields(0).Value Else rstDestination![Volume MW In Progress] = 0
+                         
+                         sIndicateur = "Volume No Eligible MW"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume No Eligible MW] = rstSource3.Fields(0).Value Else rstDestination![Volume No Eligible MW] = 0
+                         
+                         sIndicateur = "Volume MCA No Eligible"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume MCA No Eligible] = rstSource3.Fields(0).Value Else rstDestination![Volume MCA No Eligible] = 0
+                         
+                         sIndicateur = "Volume Electro"
+                         Set rstSource3 = bd.OpenRecordset("Select sum([Total]) from T_Analyse_MCA where [Short name Managing Entity]=""" & rstSource2![Short name Managing Entity] & """ and ([Reporting_Product] =""" & rstSource2!Reporting_Product & """) and ([Indicateurs] like ""*" & sIndicateur & "*"") GROUP BY T_Analyse_MCA.[Short name Managing Entity], T_Analyse_MCA.[Reporting_Product]")
+                         If Not rstSource3.EOF Then rstDestination![Volume Electro] = rstSource3.Fields(0).Value Else rstDestination![Volume Electro] = 0
+                         
+                       
+                    rstDestination.Update
+                rstSource2.MoveNext
+                Next y
+            End If
+    rstSource.MoveNext
+    Next i
+    
+End Function
+
+Public Function Construction_Reporting()
+
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    Dim FileTemp As String
+    
+    
+    'statusBarInitial = Application.DisplayStatusBar
+    Application.DisplayStatusBar = True
+    Application.StatusBar = "Macro en cours..."
+    
+    Set WkMacro = ThisWorkbook
+    WkMacro.Activate
+    FileTemp = WsSettings.Range("Path_Output_Folder").Offset(0, 1).Value
+    Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+    '************************************************************************************************
+    'Reporting Amer
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Construction du reporting Amer..."
+    Application.ScreenUpdating = False
+    bd.Execute "Delete * from T_Report_Amer"
+    bd.QueryDefs("Q_Append_Report_Amer").Execute
+        
+    Call GenWeekly("T_Report_Amer", "T_Stats_Top_Amer_By_Product", "Amer")
+    
+    '****************************************************************************************************
+    'Reporting Asie
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Construction du reporting Asie..."
+    Application.ScreenUpdating = False
+    bd.Execute "Delete * from T_Report_Asie"
+    bd.QueryDefs("Q_Append_Report_Asie").Execute
+    
+    Call GenWeekly("T_Report_Asie", "T_Stats_Top_Asie_By_Product", "Asie")
+    
+    '****************************************************************************************************
+    'Reporting Europe
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Construction du reporting Asie..."
+    Application.ScreenUpdating = False
+    bd.Execute "Delete * from T_Report_Europe"
+    bd.QueryDefs("Q_Append_Report_Europe").Execute
+    
+    Call GenWeekly("T_Report_Europe", "T_Stats_Top_Europe_By_Product", "Europe")
+    
+    '****************************************************************************************************************
+    
+    'Export pour le Steerco : rajout du 09/12/2015
+    'AMER
+    Call GenWeeklySteerco("T_Stats_Top_Amer_By_Product", "Amer")
+    
+    'ASIE
+    Call GenWeeklySteerco("T_Stats_Top_Asie_By_Product", "Asie")
+    
+    'Europe
+    Call GenWeeklySteerco("T_Stats_Top_Europe_By_Product", "Europe")
+    
+    'WsStatByCountry.Visible = True
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Construction du reporting Global par Country..."
+    Application.ScreenUpdating = False
+    
+    Call GenReportFO
+    
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Réinitialisation..."
+    Application.ScreenUpdating = False
+    
+    WsStatByCountry.Visible = False
+    WsSettings.Activate
+
+    Application.ScreenUpdating = True
+    
+    MsgBox "Les statistiques ont été publiées sur " & FileTemp, vbInformation, "Information"
+    
+    'sDataBTemp = Left(WsSettings.[path_database].Offset(0, 1).Value, Len(WsSettings.[path_database].Offset(0, 1).Value) - 4) & "_old.mdb"
+    'bd.Close
+    
+    Set WkMacro = Nothing
+
+    Set bd = Nothing
+    'Application.DisplayStatusBar = statusBarInitial
+End Function
+Public Function StatsTop(sDestination As String, sSource As String)
+    Dim WkMacro As Workbook
+    Dim bd As Database
+
+    
+    Dim rstSource As Recordset
+    Dim rstSource2 As Recordset
+    Dim rstSource3 As Recordset
+    Dim rstSource4 As Recordset
+    Dim rstDestination As Recordset
+    Dim MaDate As Date
+    Dim sTableManaging As String
+    
+    Dim sManaging As String
+    Dim sClient As String
+    Dim lVol6mois As Long
+    Dim lVolNon_Elec As Long
+    Dim lVolPotential_Elec As Long
+    Dim lVolMCA_Progress As Long
+    Dim lVolMCA_Executed As Long
+    Dim lVolMW_To_Onboard As Long
+    Dim lVolMW_Live As Long
+    Dim lVolEliNewMCA As Long
+    Dim lVolMWEli As Long
+    Dim iNbRec  As Integer
+    Dim iNbRec2 As Integer
+    Dim iNbProduct As Integer
+    Dim iNbSales As Integer
+    Dim sProduct As String
+    Dim sSales As String
+    Dim iVolViaAnaMCA As Integer
+    Dim lVolElectroAutre  As Integer
+    Dim lNbDealsMCAInProgviaAnaMCA  As Integer
+    Dim lNbDealsMCAExeviaAnaMCA  As Integer
+    Dim lNbDealsMWInProgviaAnaMCA  As Integer
+    Dim lNbDealsMWLiveviaAnaMCA  As Integer
+    Dim lVolume6mois As Integer
+    
+    Dim i As Integer
+    Dim y As Integer
+    Dim z As Integer
+    
+    
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+    
+    Set rstDestination = bd.OpenRecordset("Select * from " & sDestination & " where Date =#" & Format((MaDate), "mm/dd/yyyy") & "#")
+    'rstDestination.MoveFirst
+    
+    bd.Execute "Delete * from " & sDestination & " where Date =#" & Format((MaDate), "mm/dd/yyyy") & "#"
+    
+    Set rstSource = bd.OpenRecordset("Select Managing_Short_Name from " & sSource & " group by Managing_Short_Name")
+    rstSource.MoveLast
+    iNbRec = rstSource.RecordCount
+    rstSource.MoveFirst
+        
+            For i = 0 To iNbRec - 1
+            sManaging = rstSource![Managing_Short_Name]
+            sClient = ""
+            lVol6mois = 0
+            lVolNon_Elec = 0
+            lVolPotential_Elec = 0
+            lVolMCA_Progress = 0
+            lVolMCA_Executed = 0
+            lVolMW_To_Onboard = 0
+            lVolMW_Live = 0
+            lVolEliNewMCA = 0
+            lVolMWEli = 0
+            iNbProduct = 0
+            iNbSales = 0
+            sProduct = ""
+            sSales = ""
+            iVolViaAnaMCA = 0
+            lVolElectroAutre = 0
+            lNbDealsMCAInProgviaAnaMCA = 0
+            lNbDealsMCAExeviaAnaMCA = 0
+            lNbDealsMWInProgviaAnaMCA = 0
+            lNbDealsMWLiveviaAnaMCA = 0
+            
+                sTableManaging = sSource
+                Set rstSource3 = bd.OpenRecordset("Select * from " & sTableManaging & " where [Managing_Short_Name]=""" & sManaging & """")
+                rstSource3.MoveLast
+                iNbRec2 = rstSource3.RecordCount
+                rstSource3.MoveFirst
+                
+                For y = 0 To iNbRec2 - 1
+                    
+                    sClient = rstSource3![Short_Name_Client].Value
+                    Set rstSource2 = bd.OpenRecordset("Select sum(Paper_Volume) from T_Stats_Volume_Non_Electro where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolNon_Elec = lVolNon_Elec + rstSource2.Fields(0).Value
+                    
+                    Set rstSource2 = bd.OpenRecordset("Select count([Deal Operation ID]) from T_Data_Pour_Stats where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolume6mois = lVolume6mois + rstSource2.Fields(0).Value
+            
+                    Set rstSource2 = bd.OpenRecordset("Select sum(In_Progress) from T_Stats_Potential_Electro where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolPotential_Elec = lVolPotential_Elec + rstSource2.Fields(0).Value
+                    
+                    Set rstSource2 = bd.OpenRecordset("Select count(Cle_corrigee) from T_Stats_MCA_In_Progress where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolMCA_Progress = lVolMCA_Progress + rstSource2.Fields(0).Value
+                    Set rstSource2 = bd.OpenRecordset("Select sum(NbDeals) from T_Stats_MCA_In_Progress where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lNbDealsMCAInProgviaAnaMCA = lNbDealsMCAInProgviaAnaMCA + rstSource2.Fields(0).Value
+                    
+                    Set rstSource2 = bd.OpenRecordset("Select count(Cle_corrigee) from T_Stats_MCA_Executed where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolMCA_Executed = lVolMCA_Executed + rstSource2.Fields(0).Value
+                    Set rstSource2 = bd.OpenRecordset("Select sum(NbDeals) from T_Stats_MCA_Executed where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lNbDealsMCAExeviaAnaMCA = lNbDealsMCAExeviaAnaMCA + rstSource2.Fields(0).Value
+                    
+                    Set rstSource2 = bd.OpenRecordset("Select count(Cle_corrigee) from T_Stats_MW_In_Progress where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolMW_To_Onboard = lVolMW_To_Onboard + rstSource2.Fields(0).Value
+                    Set rstSource2 = bd.OpenRecordset("Select sum(NbDeals) from T_Stats_MW_In_Progress where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lNbDealsMWInProgviaAnaMCA = lNbDealsMWInProgviaAnaMCA + rstSource2.Fields(0).Value
+                    
+                    Set rstSource2 = bd.OpenRecordset("Select count(Cle_corrigee) from T_Stats_MW_Live_Global where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolMW_Live = lVolMW_Live + rstSource2.Fields(0).Value
+                    Set rstSource2 = bd.OpenRecordset("Select sum(NbDeals) from T_Stats_MW_Live_Global where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lNbDealsMWLiveviaAnaMCA = lNbDealsMWLiveviaAnaMCA + rstSource2.Fields(0).Value
+                
+                    Set rstSource2 = bd.OpenRecordset("Select sum([Executed]) from T_Stats_isMCA where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolEliNewMCA = lVolEliNewMCA + rstSource2.Fields(0).Value
+            
+                    Set rstSource2 = bd.OpenRecordset("Select sum(MW_Potential) from T_Stats_MW_Eli where [Short name Client]=""" & sClient & """")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolMWEli = lVolMWEli + rstSource2.Fields(0).Value
+                    
+                    Set rstSource2 = bd.OpenRecordset("Select sum(Total) from T_Analyse_MCA where ([Short name Client]=""" & sClient & """ and [Reporting_Product]='" & sProduct & "')")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then iVolViaAnaMCA = iVolViaAnaMCA + rstSource2.Fields(0).Value
+                    
+                    Set rstSource2 = bd.OpenRecordset("Select sum(NbDeals) from T_Stats_MCA_DTCC where ([Short name Client]=""" & sClient & """ and [Reporting_Product]='" & sProduct & "')")
+                    If Not IsNull(rstSource2.Fields(0).Value) Then lVolElectroAutre = lVolElectroAutre + rstSource2.Fields(0).Value
+    
+                    'Récupération des produits
+                    Set rstSource2 = bd.OpenRecordset("Select * from Q_List_Reporting_Product_By_Short_Name where [Short_Name_Client]=""" & sClient & """")
+                    
+                    If Not rstSource2.EOF Then
+                        If Not IsNull(rstSource2.Fields(0).Value) Then
+                            rstSource2.MoveLast
+                            iNbProduct = rstSource2.RecordCount
+                            rstSource2.MoveFirst
+                            For z = 0 To iNbProduct - 1
+                                If InStr(sProduct, rstSource2.Fields(0).Value) = 0 Then
+                                    sProduct = sProduct & rstSource2.Fields(0).Value
+                                    sProduct = sProduct & ","
+                                End If
+                            rstSource2.MoveNext
+                            Next z
+                            
+                        End If
+                    End If
+                    
+                    'Récupération des sales
+                    Set rstSource2 = bd.OpenRecordset("Select * from T_List_Sales_By_ShortNameCTPY where [Short name Client]=""" & sClient & """")
+                    If Not rstSource2.EOF Then
+                        If Not IsNull(rstSource2.Fields(0).Value) Then
+                            rstSource2.MoveLast
+                            iNbSales = rstSource2.RecordCount
+                            rstSource2.MoveFirst
+                            For z = 0 To iNbSales - 1
+                                'If Not IsNull(rstSource2.Fields(0).Value) Then
+                                    If InStr(sSales, rstSource2.Fields(0).Value) = 0 Or InStr(sSales, rstSource2.Fields(2).Value) = 0 Then
+                                        If IsNull(rstSource2.Fields(2)) Or rstSource2.Fields(2) = "" Then
+                                            sSales = sSales & rstSource2.Fields(0).Value
+                                        Else
+                                            sSales = sSales & rstSource2.Fields(2).Value
+                                        End If
+                                        sSales = sSales & ","
+                                    End If
+                                'End If
+                            rstSource2.MoveNext
+                            Next z
+                           
+                        End If
+                    End If
+
+                rstSource3.MoveNext
+                Next y
+                
+                If Left(sProduct, 1) = "," Then sProduct = Left(sProduct, Len(sProduct) - 1)
+                If Left(sSales, 1) = "," Then sSales = Left(sSales, Len(sSales) - 1)
+                
+                    'on renseigne la stat pour la managing
+                     'Select Case bUpdate
+                      '  Case False
+                            Set rstDestination = bd.OpenRecordset("Select * from " & sDestination)
+                            rstDestination.AddNew
+                                rstDestination!Date = Format(MaDate, "dd/mm/yyyy")
+                                rstDestination!Managing_Short_Name = sManaging
+                                rstDestination!sales = Left(sSales, 255)
+                                rstDestination!Products = Left(sProduct, 255)
+                                rstDestination!Volume_Non_Electro = lVolNon_Elec
+                                rstDestination!Volume_6_mois = lVolume6mois
+                                rstDestination!Volume_Potential_Electro = lVolPotential_Elec
+                                rstDestination!MCA_In_Progress = lVolMCA_Progress
+                                rstDestination!MCA_Executed = lVolMCA_Executed
+                                rstDestination!MW_to_Onboard = lVolMW_To_Onboard
+                                rstDestination!MW_Eligible = lVolMWEli
+                                rstDestination!Eligible_New_MCA = lVolEliNewMCA
+                                rstDestination!MW_Live = lVolMW_Live
+                                rstDestination!Volume_Electro_Autre = lVolElectroAutre
+                                If lVolNon_Elec = 0 Or lVolMWEli = 0 Then rstDestination!Pourcent_Electro = 0 Else rstDestination!Pourcent_Electro = (lVolMWEli / lVolNon_Elec)
+                                rstDestination!VolumeViaAnaMCA = iVolViaAnaMCA
+                                rstDestination!Paper_MCA_In_Progress = lNbDealsMCAInProgviaAnaMCA
+                                rstDestination!Paper_MCA_Executed = lNbDealsMCAExeviaAnaMCA
+                                rstDestination!Paper_MW_In_Progress = lNbDealsMWInProgviaAnaMCA
+                                rstDestination!Paper_MW_Live = lNbDealsMWLiveviaAnaMCA
+                            rstDestination.Update
+                                            
+            rstSource.MoveNext
+            Next i
+    Set rstSource = Nothing
+    Set rstSource2 = Nothing
+    Set rstSource3 = Nothing
+    Set rstSource4 = Nothing
+    Set rstDestination = Nothing
+End Function
+
+
+Public Function GenWeekly(sSource As String, sSource4 As String, sContinent As String)
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    Dim rst As Recordset
+        
+    Dim FileTemp As String
+    Dim sFicReport As String
+    
+    Dim rstSource As Recordset
+    Dim rstSource2 As Recordset
+    Dim rstSource3 As Recordset
+    Dim rstSource4 As Recordset
+    Dim MaDate As Date
+    Dim sManaging As String
+    Dim sClient As String
+    Dim sTestChangeManaging As String
+    Dim sSales As String
+       
+    Dim i As Integer
+    Dim z As Integer
+    Dim iNbRec As Integer
+    Dim iNbClient As Integer
+    Dim iNbLineClient As Integer
+    Dim iTotalGeoZone As Integer
+    Dim sTotalManagingFormule As String
+    Dim iTotal6M As Integer
+    Dim iMWEli As Integer
+    Dim iTotalDTCC As Integer
+    
+    Dim xlBook As Excel.Workbook
+    Dim xlSheet As Excel.Worksheet
+    
+    Dim iRefLine As Integer
+    Dim iRefCol As Integer
+    Dim iRefDebutRange As Integer
+    Dim iRefFinRange As Integer
+    Dim iRefDebutRangeClient As Integer
+    Dim iRefFinRangeClient As Integer
+    
+    Dim j As Integer
+    
+    Set WkMacro = ThisWorkbook
+    
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    Set rstSource4 = bd.OpenRecordset("Select max([Date]) from " & sSource4) '
+    MaDate = rstSource4.Fields(0).Value
+    
+    '*************************************************
+    '*************************************************
+    ' Ouvrir le fichier Template
+    '*************************************************
+    
+    'Récupération du total de deals par Area
+     Select Case Trim(sContinent)
+        Case "Amer"
+            Set rstSource3 = bd.OpenRecordset("Select sum([Volume_Total]) from T_Stats_Globales_By_Area where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# and [Area]='" & sContinent & "'")
+        Case "Asie"
+            Set rstSource3 = bd.OpenRecordset("Select sum([Volume_Total]) from T_Stats_Globales_By_Area where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# and [Area]='Asia'")
+        Case "Europe", "EUR"
+            Set rstSource3 = bd.OpenRecordset("Select sum([Volume_Total]) from T_Stats_Globales_By_Area where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# and [Area]='EUR'")
+    End Select
+    iTotalGeoZone = rstSource3.Fields(0).Value
+    Set rstSource3 = Nothing
+    
+    'If sContinent = "Amer" Then
+    '    Set rstSource = bd.OpenRecordset("Select * from " & sSource & " where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# order by [Managing_Short_Name]")
+    'If sContinent = "Asie" Then Set rstSource = bd.OpenRecordset("Select * from " & sSource & " where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# order by [Short_Name_Client]")
+    
+    'initialisation des variables
+    iRefLine = 7
+    iRefCol = 2
+    iRefDebutRange = 0
+    iRefFinRange = 0
+    iNbClient = 0
+    iNbLineClient = 0
+    iRefDebutRangeClient = 0
+    iRefFinRangeClient = 0
+    sTotalManagingFormule = ""
+    
+    sManaging = ""
+    sClient = ""
+    sTestChangeManaging = ""
+    
+    Set xlBook = Workbooks.Open(WsSettings.[Path_Template_Weekly].Offset(0, 1).Value & "Template_Weekly.xlsm")
+    Set xlSheet = xlBook.Worksheets("Weekly")
+    
+    Application.Visible = True
+    
+    Set rstSource = bd.OpenRecordset("Select distinct [Managing_Short_Name] from " & sSource4 & " where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# order by [Managing_Short_Name]")
+    rstSource.MoveFirst
+    Do While Not rstSource.EOF
+        Set rstSource3 = bd.OpenRecordset("Select * from T_Liste_Short_Name_Managing_et_Client where [Managing_Short_Name]=""" & rstSource.Fields(0).Value & """")
+        rstSource3.MoveLast
+        iNbRec = rstSource3.RecordCount
+        rstSource3.MoveFirst
+            sSales = ""
+            sClient = ""
+            For j = 0 To iNbRec - 1
+                If Not IsNull(rstSource3![sales]) And (rstSource3![sales] <> "") Then
+                    If InStr(sSales, rstSource3![sales]) = 0 Or InStr(sSales, rstSource3![sales]) = 0 Then
+                        sSales = sSales & rstSource3![sales] & ","
+                    End If
+                End If
+                If Not IsNull(rstSource3![Short_Name_Client]) And (rstSource3![Short_Name_Client] <> "") Then
+                    If InStr(sClient, rstSource3![Short_Name_Client]) = 0 Or InStr(sClient, rstSource3![Short_Name_Client]) = 0 Then
+                        sClient = sClient & rstSource3![Short_Name_Client] & ","
+                    End If
+                End If
+            rstSource3.MoveNext
+            Next j
+        
+        If Right(sSales, 1) = "," Then sSales = Left(sSales, Len(sSales) - 1)
+        If Right(sClient, 1) = "," Then sClient = Left(sClient, Len(sClient) - 1)
+        
+        Set rstSource3 = bd.OpenRecordset("Select * from " & sSource4 & " where [Managing_Short_Name]=""" & rstSource.Fields(0).Value & """ and [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#")
+        rstSource3.MoveLast
+        iNbRec = rstSource3.RecordCount
+        rstSource3.MoveFirst
+
+            For j = 0 To iNbRec - 1
+                
+                sTestChangeManaging = ""
+    
+                If rstSource.Fields(0).Value <> sManaging Then sTestChangeManaging = "nouveau" Else sTestChangeManaging = "pas nouveau"
+                       
+                'Cas nouvelle ligne de managing
+                If sTestChangeManaging = "nouveau" Then 'Traitement si l'on arrive sur une nouvelle managing
+                            sTotalManagingFormule = ""
+                            sManaging = rstSource.Fields(0).Value
+                            
+                            'Détermination du range à fusionner pour afficher les stats globales (pas par produit)
+                            iRefDebutRange = iRefLine
+                            iRefDebutRangeClient = iRefLine
+                            Set rstSource2 = bd.OpenRecordset("Select * from " & sSource4 & " where [Managing_Short_Name]=""" & sManaging & """ and [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#") ' GROUP BY " & sSource4 & ".[Managing_Short_Name], " & sSource4 & ".[Products]")
+                            rstSource2.MoveLast
+                            iRefFinRange = iRefLine + rstSource2.RecordCount - 1
+                            Set rstSource2 = Nothing
+                            
+                'Formatage au niveau de la managing
+                        'Rajout d'une ligne de séparation entre les Managing
+                        xlBook.Activate
+                        xlSheet.Range(Cells(iRefFinRange, 2), Cells(iRefFinRange, 20)).Select
+                            With Selection.Borders(xlEdgeBottom)
+                                .LineStyle = xlContinuous
+                                .ColorIndex = 0
+                                .TintAndShade = 0
+                                .ThemeColor = 6
+                                .Weight = xlThin
+                            End With
+                        xlSheet.Range(Cells(iRefLine, iRefCol), Cells(iRefLine, iRefCol)).Select
+                        
+                        'Rajout d'une ligne de total pour la managing
+                        xlBook.Activate
+                        xlSheet.Activate
+                        For z = 7 To 15 Step 1
+                            If iRefLine - iRefFinRange < 0 Then 'Cas d'une somme qui correspond à une seule ligne
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).Select
+                                ActiveCell.FormulaR1C1 = "=SUM(R[" & iRefLine - iRefFinRange - 1 & "]C:R[-1]C)"
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).Select
+                                With Selection.Font
+                                    .Bold = True
+                                    .ThemeColor = xlThemeColorLight1
+                                    .TintAndShade = 0
+                                End With
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).FormatConditions.Delete
+                            Else
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).Select
+                                ActiveCell.FormulaR1C1 = "=R[-1]C"
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).Select
+                                With Selection.Font
+                                    .Bold = True
+                                    .ThemeColor = xlThemeColorLight1
+                                    .TintAndShade = 0
+                                End With
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).FormatConditions.Delete
+                            End If
+                        Next z
+                        
+                        'Rajout d'une ligne de séparation entre les managing
+                        xlBook.Activate
+                        xlSheet.Activate
+                        xlSheet.Range(Cells(iRefFinRange + 1, 2), Cells(iRefFinRange + 1, 20)).Select
+                            With Selection.Borders(xlEdgeBottom)
+                                .LineStyle = xlContinuous
+                                .ColorIndex = 0
+                                .TintAndShade = 0
+                                .ThemeColor = 6
+                                .Weight = xlThin
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                        xlSheet.Range(Cells(iRefLine, iRefCol), Cells(iRefLine, iRefCol)).Select
+                
+                ' Alimentation des valeurs globales au niveau du client (mergées)
+                    Set rstSource4 = bd.OpenRecordset("Select * from " & sSource & " where [Managing_Short_Name]=""" & sManaging & """")
+                    iTotal6M = rstSource4![Volume Total]
+                    iMWEli = rstSource4![Volume MW Eligible]
+                    iTotalDTCC = rstSource4![Volume DTCC]
+                    Set rstSource4 = Nothing
+                    
+                        xlSheet.Cells(iRefLine, iRefCol).Value = sManaging
+                        xlSheet.Cells(iRefLine, iRefCol + 1).Value = sClient
+                        xlSheet.Cells(iRefLine, iRefCol + 2).Value = sSales
+                        xlSheet.Cells(iRefLine, iRefCol + 5).Value = iTotal6M
+                        xlSheet.Cells(iRefLine, iRefCol + 8).Value = iMWEli
+                        xlSheet.Cells(iRefLine, iRefCol + 12).Value = iTotalDTCC
+                            'Merge des cellules globales (tirées du Report MCA, l'extraction Monaco)
+                            'Au niveau de la managing
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol), Cells(iRefFinRange + 1, iRefCol)).Merge
+                            With Selection
+                                .HorizontalAlignment = xlGeneral
+                                .HorizontalAlignment = xlCenter
+                                .VerticalAlignment = xlCenter
+                                .WrapText = True
+                                .MergeCells = True
+                            End With
+                           
+                           'Déco
+                            With Selection.Borders
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                            
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 1), Cells(iRefFinRange, iRefCol + 1)).Select
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 1), Cells(iRefFinRange, iRefCol + 1)).Merge
+                            'Selection.Merge
+                            With Selection
+                                .HorizontalAlignment = xlCenter
+                                .VerticalAlignment = xlCenter
+                                .WrapText = True
+                                .MergeCells = True
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+    
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 2), Cells(iRefFinRange, iRefCol + 2)).Select
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 2), Cells(iRefFinRange, iRefCol + 2)).Merge
+                            'Selection.Merge
+                            With Selection
+                                .HorizontalAlignment = xlCenter
+                                .VerticalAlignment = xlCenter
+                                .WrapText = True
+                                .MergeCells = True
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 5), Cells(iRefFinRange, iRefCol + 5)).Select
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 5), Cells(iRefFinRange, iRefCol + 5)).Merge
+                            'Selection.Merge
+                            With Selection
+                                .HorizontalAlignment = xlCenter
+                                .VerticalAlignment = xlCenter
+                                .WrapText = True
+                                .MergeCells = True
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 8), Cells(iRefFinRange, iRefCol + 8)).Select
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 8), Cells(iRefFinRange, iRefCol + 8)).Merge
+                            'Selection.Merge
+                            With Selection
+                                .HorizontalAlignment = xlCenter
+                                .VerticalAlignment = xlCenter
+                                .WrapText = True
+                                .MergeCells = True
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 12), Cells(iRefFinRange, iRefCol + 12)).Select
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 12), Cells(iRefFinRange, iRefCol + 12)).Merge
+                            'Selection.Merge
+                            With Selection
+                                .HorizontalAlignment = xlCenter
+                                .VerticalAlignment = xlCenter
+                                .WrapText = True
+                                .MergeCells = True
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                            
+                    End If
+                    
+                     'Traitement si l'on reste sur le même client (et eventuellement la même managing
+                        'A ne pas merger
+                            xlSheet.Cells(iRefLine, iRefCol + 3).Value = rstSource3![Products].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 6).Value = rstSource3![Volume Equivalent Paper].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 7).Value = rstSource3![Volume Equivalent Paper].Value / iTotalGeoZone
+                            xlSheet.Cells(iRefLine, iRefCol + 9).Value = rstSource3![Volume MCA In Progress].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 10).Value = rstSource3![Volume MCA YtD].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 11).Value = rstSource3![Volume MW In Progress].Value
+                            'xlSheet.Cells(iRefLine, iRefCol + 12).Value = rstSource3![Volume No Electro].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 13).Value = CDbl(rstSource3![Volume MW YtD].Value)
+                    'If iRefFinRange - iRefLine = 1 Then 'nous arrivons à la dernière ligne du dernier client
+                    '    iRefLine = iRefLine + 2
+                    'Else
+                        iRefLine = iRefLine + 1
+                    'End If
+            rstSource3.MoveNext
+            Next j
+    iRefLine = iRefLine + 1
+    rstSource.MoveNext
+    'Attention si on arrive à la fin de liste attachée à la managing, il faut sauter la ligne des totaux
+            'If iRefFinRange - iRefLine = 1 Then 'nous arrivons à la dernière ligne du dernier client
+            '    iRefLine = iRefLine + 2
+            'Else
+            '    iRefLine = iRefLine + 1
+            'End If
+    Loop
+    
+     'Export du suivi
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Export du reporting " & sContinent & "..."
+    Application.ScreenUpdating = False
+
+    Range("B6").Select
+    
+    
+    WkMacro.Activate
+    FileTemp = WsSettings.[Path_Output_Folder].Offset(0, 1).Value
+        If Right(FileTemp, 1) <> "\" Then FileTemp = FileTemp & "\"
+    
+    sFicReport = FileTemp & Year(MaDate) & "-" & Month(MaDate) & "-" & Day(MaDate) & "_Suivi Weekly " & sContinent & " MCA " & ".xlsm"
+    
+    If CheckFileExist(sFicReport, False) Then Kill sFicReport
+    
+    'Set WkMacro = Application.Workbooks("Macro_Report_MCA_V10.xlsm")
+    'WkMacro.Activate
+    'xlsheet.Copy 'Destination:=xlApp.Workbooks(xlBook.Name).Worksheets(xlSheet.Name)
+    xlBook.Activate
+    'Set xlBook = ActiveWorkbook
+    xlBook.SaveAs Filename:=sFicReport, FileFormat:=xlOpenXMLWorkbookMacroEnabled, CreateBackup:=False
+    'Set xlBook = ActiveWorkbook
+    
+    xlBook.Sheets(1).Rows("1:4").ClearContents
+    xlBook.Sheets(1).Rows("1:4").EntireRow.Hidden = True
+    xlBook.Sheets(1).Range("1:1,3:5").Select
+    xlBook.Sheets(1).Range("B3").Activate
+    Selection.EntireRow.Hidden = True
+    xlBook.Sheets(1).Range("C7").Select
+    
+    xlBook.Sheets(1).Range(Cells(7, 2), Cells(iRefLine, 20)).Select
+        Selection.Borders(xlEdgeTop).LineStyle = xlNone
+        Selection.Borders(xlEdgeBottom).LineStyle = xlNone
+        With Selection.Borders(xlEdgeRight)
+            .LineStyle = xlContinuous
+            .ThemeColor = 6
+            .TintAndShade = 0
+            .Weight = xlMedium
+        End With
+        With Selection.Borders(xlInsideVertical)
+            .LineStyle = xlContinuous
+            .ThemeColor = 6
+            .TintAndShade = 0
+            .Weight = xlThin
+        End With
+    xlBook.Sheets(1).Cells.EntireRow.AutoFit
+    xlBook.Sheets(1).Range("B1").Select
+    
+    
+    'Export des données pour le double-click
+        'WsAnalyseMCA.Activate
+        Set rst = bd.OpenRecordset("SELECT * from T_Analyse_MCA")
+        xlBook.Activate
+        
+        If Sheets("Analyse_MCA").ListObjects("Table_Analyse_MCA").ListRows.Count > 0 Then
+            Sheets("Analyse_MCA").ListObjects("Table_Analyse_MCA").DataBodyRange.Delete
+        End If
+        
+        Sheets("Analyse_MCA").Range("A2").CopyFromRecordset rst
+        Sheets("Analyse_MCA").Cells.EntireColumn.AutoFit
+        rst.Close
+        
+        'mise à jour du format
+        xlBook.Sheets(1).Columns(7).NumberFormat = "0"
+        xlBook.Sheets(1).Columns(8).NumberFormat = "0"
+        xlBook.Sheets(1).Columns(10).NumberFormat = "0"
+        xlBook.Sheets(1).Columns(11).NumberFormat = "0"
+        xlBook.Sheets(1).Columns(12).NumberFormat = "0"
+        xlBook.Sheets(1).Columns(13).NumberFormat = "0"
+        xlBook.Sheets(1).Columns(14).NumberFormat = "0"
+        xlBook.Sheets(1).Columns(15).NumberFormat = "0"
+
+        Sheets("Analyse_MCA").Visible = True
+        Sheets("Analyse_MCA").Activate
+        Sheets("Analyse_MCA").Columns("A:A").Select
+        Sheets("Analyse_MCA").Range(Selection, Selection.End(xlToRight)).Select
+        Selection.ColumnWidth = 74.14
+        Sheets("Analyse_MCA").Columns("A:X").EntireColumn.AutoFit
+        Sheets("Analyse_MCA").Cells.Select
+        Sheets("Analyse_MCA").Cells.EntireRow.AutoFit
+        Sheets("Analyse_MCA").Select
+            Columns("J:J").Select
+            Selection.NumberFormat = "0"
+            Range("Table_Analyse_MCA[[#Headers],[Total]]").Select
+        Sheets("Analyse_MCA").Range("A1").Select
+        
+        For i = 4 To 10
+            xlBook.Sheets("Analyse_MCA").Columns(i).NumberFormat = "0"
+        Next i
+        Sheets("Analyse_MCA").Visible = False
+        
+        'WsReportMCA.Activate
+        Set rst = bd.OpenRecordset("SELECT * from T_Data_Pour_Stats")
+        
+        If Sheets("Report_MCA").ListObjects("Table_Report_MCA").ListRows.Count > 0 Then
+            Sheets("Report_MCA").ListObjects("Table_Report_MCA").DataBodyRange.Delete
+        End If
+        
+        Sheets("Report_MCA").Range("A2").CopyFromRecordset rst
+        Sheets("Report_MCA").Cells.EntireColumn.AutoFit
+        rst.Close
+        Sheets("Report_MCA").Visible = True
+        Sheets("Report_MCA").Activate
+        Columns("A:A").Select
+        Sheets("Report_MCA").Range(Selection, Selection.End(xlToRight)).Select
+        Selection.ColumnWidth = 74.14
+        Sheets("Report_MCA").Columns("A:X").EntireColumn.AutoFit
+        Sheets("Report_MCA").Cells.Select
+        Sheets("Report_MCA").Cells.EntireRow.AutoFit
+        Sheets("Report_MCA").Range("A1").Select
+        Sheets("Report_MCA").Visible = False
+    
+    Sheets("Weekly").Select
+    Range("A7").Select
+     
+    
+    xlBook.Sheets(1).Range("C7").Select
+    xlBook.Close True
+      
+    WkMacro.Activate
+    Range("A7").Select
+    
+        
+    Set xlBook = Nothing
+    
+    
+End Function
+Public Function RajoutSymbol()
+    
+    Range("R173:AF179").Select
+    Selection.FormatConditions.AddIconSetCondition
+    Selection.FormatConditions(Selection.FormatConditions.Count).SetFirstPriority
+    With Selection.FormatConditions(1)
+        .ReverseOrder = False
+        .ShowIconOnly = True
+        .IconSet = ActiveWorkbook.IconSets(xl3Symbols2)
+    End With
+    With Selection.FormatConditions(1).IconCriteria(2)
+        .Type = xlConditionValueNumber
+        .Value = 0
+        .Operator = 7
+    End With
+    With Selection.FormatConditions(1).IconCriteria(3)
+        .Type = xlConditionValueNumber
+        .Value = 0
+        .Operator = 7
+    End With
+End Function
+Public Function GenerationTop()
+   
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    Dim MaDate As Date
+    
+    Application.DisplayStatusBar = True
+    Application.StatusBar = "Macro en cours..."
+    
+    MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+    
+    Set WkMacro = ThisWorkbook
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    
+    
+    'Nouvelle règle du 17/11/2015 : détermination du top 30 Managing par région en dynamique
+         bd.Execute "Delete * from T_Top_Managing_Amer"
+         bd.QueryDefs("Q_Append_Managing_Amer").Execute
+         bd.Execute "Delete * from T_Top_Managing_Asia"
+         bd.QueryDefs("Q_Append_Managing_Asia").Execute
+         bd.Execute "Delete * from T_Top_Managing_Europe"
+         bd.QueryDefs("Q_Append_Managing_Europe").Execute
+       
+       'On récupère pour chacune des managing, les short name associés
+       'Set bd = OpenDatabase([path_database].Offset(0, 1).Value)
+             bd.Execute "Delete * from T_Top_Amer"
+             bd.QueryDefs("Q_Append_Top_Amer").Execute
+             bd.Execute "Delete * from T_Top_Asia"
+             bd.QueryDefs("Q_Append_Top_Asia").Execute
+             bd.Execute "Delete * from T_Top_Europe"
+             bd.QueryDefs("Q_Append_Top_Europe").Execute
+       
+    'Stat Top avec regroupement produits et Sales pour le report Weekly
+     'Call StatsTop("T_Stats_Top_Amer", "T_Top_Amer")
+     'Call StatsTop("T_Stats_Top_Asie", "T_Top_Asia")
+     'Call StatsTop("T_Stats_Top_Europe", "T_Top_Europe")
+    
+End Function
+
+Public Function GenReportFO()
+    Dim WkMacro As Workbook
+    Dim bd As Database
+        
+    Dim FileTemp As String
+    Dim sFicReport As String
+    Dim sSQL        As String
+    Dim rstSource As Recordset
+    Dim rstSource2 As Recordset
+    Dim MaDate As Date
+    Dim sManaging As String
+    Dim sClient As String
+       
+    Dim z As Integer
+    
+    Dim xlBook As Excel.Workbook
+    
+    Dim iRefLine As Integer
+    Dim iRefCol As Integer
+    Dim iRefDebutRange As Integer
+    Dim iRefFinRange As Integer
+    
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    Set WkMacro = ThisWorkbook
+    MaDate = Day(Date) & "-" & Month(Date) & "-" & Year(Date)
+    
+    Set rstSource = bd.OpenRecordset("Select * from Q_Date_Report")
+    MaDate = rstSource!Date_Report.Value
+    
+    
+    ' Réalisation de l'onglet Global par Area
+    Set rstSource = bd.OpenRecordset("Select * from T_Stats_Globales_By_Area where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#") ' order by [Short_Name_Client]")
+    
+    'initialisation des variables
+    iRefLine = 4
+    iRefCol = 2
+    iRefDebutRange = 0
+    iRefFinRange = 0
+    sClient = ""
+        
+    rstSource.MoveFirst
+    Do While Not rstSource.EOF
+        
+            'Rajout d'une ligne de séparation entre les Area
+            WsStatByCountry.Activate
+            WsStatByCountry.Visible = True
+            WsStatByCountry.Range(Cells(iRefLine, 2), Cells(iRefLine, 19)).Select ' Borders (xlEdgeBottom)
+            With Selection.Borders(xlEdgeBottom)
+                .LineStyle = xlContinuous
+                .ColorIndex = 0
+                .TintAndShade = 0
+                '.ThemeColor = 6
+                .Weight = xlThin
+            End With
+            Range(Cells(iRefLine, iRefCol), Cells(iRefLine, iRefCol)).Select
+            
+            'A merger
+            WsStatByCountry.Cells(iRefLine, iRefCol + 1).Value = rstSource![Area].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 2).Value = rstSource![Volume_Total].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 3).Value = rstSource![Volume_No_Conf].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 4).Value = rstSource![Volume_Electro].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 5).Value = rstSource![Dont_Volume_MW].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 6).Value = rstSource![Dont_Volume_DTCC].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 7).Value = rstSource![Dont_Volume_SW].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 8).Value = rstSource![Volume_No_Electro].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 9).Value = rstSource![Volume_MCA].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 10).Value = rstSource![Volume_No_MCA].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 11).Value = rstSource![Volume_MCA_Eli].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 12).Value = rstSource![Volume_MW_Eli].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 13).Value = rstSource![Volume_MW_No_Eli].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 14).Value = rstSource![Volume_MCA_No_Eli].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 15).Value = rstSource![Volume_MCA_Eli_Vide].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 16).Value = rstSource![Volume_MW_Eli_Vide].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 17).Value = rstSource![Volume_Electro_Undefined].Value
+
+    rstSource.MoveNext
+    iRefLine = iRefLine + 1
+    Loop
+    WsStatByCountry.Cells(1, 1).Select
+    'Initialisation du Fichier de Report FO
+    FileTemp = WsSettings.[Path_Output_Folder].Offset(0, 1).Value
+        If Right(FileTemp, 1) <> "\" Then FileTemp = FileTemp & "\"
+    
+    sFicReport = FileTemp & Year(MaDate) & "-" & Month(MaDate) & "-" & Day(MaDate) & "_Suivi Weekly Volume for FO " & ".xlsx"
+    
+    If CheckFileExist(sFicReport, False) Then Kill sFicReport
+    
+    WkMacro.Activate
+    WsStatByCountry.Copy
+    Set xlBook = ActiveWorkbook
+    xlBook.SaveAs Filename:=sFicReport, FileFormat:=xlOpenXMLWorkbook, CreateBackup:=False
+    
+    xlBook.Sheets(1).Name = "Volume by Area last 6 months"
+    xlBook.Sheets(1).Cells.EntireRow.AutoFit
+    xlBook.Sheets(1).Range("A1").Select
+    WsStatByCountry.Activate
+    If iRefLine <= 4 Then WsStatByCountry.Rows("4:2500").Delete shift:=xlUp Else WsStatByCountry.Rows("4:" & iRefLine).Delete shift:=xlUp
+   
+    
+    'Export en dessous de la liste par "Managing"
+    Set rstSource = bd.OpenRecordset("Select * from Q_Stats_Globales_By_Area_and_Managing where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#") ' order by [Short_Name_Client]")
+    
+    'initialisation des variables
+    iRefLine = 4
+    iRefCol = 2
+    iRefDebutRange = 0
+    iRefFinRange = 0
+    sManaging = ""
+        
+    rstSource.MoveFirst
+    Do While Not rstSource.EOF
+            sManaging = "" & rstSource![Managing_Short_Name]
+            'Rajout d'une ligne de séparation entre les entités
+            WsStatByCountry.Activate
+            WsStatByCountry.Range(Cells(iRefLine, 2), Cells(iRefLine, 19)).Select ' Borders (xlEdgeBottom)
+            With Selection.Borders(xlEdgeBottom)
+                .LineStyle = xlContinuous
+                .ColorIndex = 0
+                .TintAndShade = 0
+                '.ThemeColor = 6
+                .Weight = xlThin
+            End With
+            WsStatByCountry.Range(Cells(iRefLine, iRefCol), Cells(iRefLine, iRefCol)).Select
+            
+            'A merger
+            WsStatByCountry.Cells(iRefLine, iRefCol).Value = sManaging
+            WsStatByCountry.Cells(iRefLine, iRefCol + 1).Value = rstSource![Area].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 2).Value = rstSource![Volume_Total].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 3).Value = rstSource![Volume_No_Conf].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 4).Value = rstSource![Volume_Electro].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 5).Value = rstSource![Dont_Volume_MW].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 6).Value = rstSource![Dont_Volume_DTCC].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 7).Value = rstSource![Dont_Volume_SW].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 8).Value = rstSource![Volume_No_Electro].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 9).Value = rstSource![Volume_MCA].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 10).Value = rstSource![Volume_No_MCA].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 11).Value = rstSource![Volume_MCA_Eli].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 12).Value = rstSource![Volume_MW_Eli].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 13).Value = rstSource![Volume_MW_No_Eli].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 14).Value = rstSource![Volume_MCA_No_Eli].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 15).Value = rstSource![Volume_MCA_Eli_Vide].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 16).Value = rstSource![Volume_MW_Eli_Vide].Value
+            WsStatByCountry.Cells(iRefLine, iRefCol + 17).Value = rstSource![Volume_Electro_Undefined].Value
+
+    rstSource.MoveNext
+    iRefLine = iRefLine + 1
+    Loop
+    WsStatByCountry.Cells(1, 1).Select
+    
+    'Export du suivi
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Export du reporting Global..."
+    Application.ScreenUpdating = False
+    
+    WsStatByCountry.Copy after:=xlBook.Sheets(1)
+    xlBook.Sheets(2).Name = "Volume by Managing"
+    xlBook.Sheets(2).Cells.EntireRow.AutoFit
+    xlBook.Sheets(2).Range("A1").Select
+    
+    If iRefLine <= 4 Then WsStatByCountry.Rows("4:2500").Delete shift:=xlUp Else WsStatByCountry.Rows("4:" & iRefLine).Delete shift:=xlUp
+   
+    'Génération du report Amer
+    WsStatByCountry.Visible = True
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Construction du reporting Amer par Country..."
+    Application.ScreenUpdating = False
+    
+    sSQL = ""
+    sSQL = sSQL & "SELECT T_Stats_Top_Amer_by_Area.Date, T_Stats_Top_Amer_by_Area.Managing_Short_Name, T_Stats_Top_Amer_by_Area.Area, Sum(T_Stats_Top_Amer_by_Area.Volume_Total) AS Volume_Total, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_No_Conf) AS Volume_No_Conf, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_No_Electro) AS Volume_No_Electro, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_Electro) AS Volume_Electro, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Dont_Volume_MW) AS Dont_Volume_MW, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Dont_Volume_DTCC) AS Dont_Volume_DTCC, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Dont_Volume_SW) AS Dont_Volume_SW, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_MCA) AS Volume_MCA, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_No_MCA) AS Volume_No_MCA, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_MCA_Eli) AS Volume_MCA_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_MW_Eli) AS Volume_MW_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_MW_No_Eli) AS Volume_MW_No_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_MCA_No_Eli) AS Volume_MCA_No_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_MCA_Eli_Vide) AS Volume_MCA_Eli_Vide, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_MW_Eli_Vide) AS Volume_MW_Eli_Vide, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Amer_by_Area.Volume_Electro_Undefined) AS Volume_Electro_Undefined " & vbCrLf
+    sSQL = sSQL & vbCrLf
+    sSQL = sSQL & "FROM (" & vbCrLf
+    sSQL = sSQL & "      SELECT S.Date, Sum(S.Volume_MCA) AS Tri, " & vbCrLf
+    sSQL = sSQL & "      S.Managing_Short_Name " & vbCrLf
+    sSQL = sSQL & "      FROM Q_Date_Report AS D " & vbCrLf
+    sSQL = sSQL & "      " & vbCrLf
+    sSQL = sSQL & "      INNER " & vbCrLf
+    sSQL = sSQL & "      JOIN T_Stats_Top_Amer_by_Area AS S " & vbCrLf
+    sSQL = sSQL & "      " & vbCrLf
+    sSQL = sSQL & "      ON D.Date_Report = S.Date " & vbCrLf
+    sSQL = sSQL & "      GROUP BY S.Date, S.Managing_Short_Name ) AS ORD " & vbCrLf
+    sSQL = sSQL & vbCrLf
+    sSQL = sSQL & "INNER " & vbCrLf
+    sSQL = sSQL & "JOIN T_Stats_Top_Amer_by_Area " & vbCrLf
+    sSQL = sSQL & "ON (ORD.Managing_Short_Name = T_Stats_Top_Amer_by_Area.Managing_Short_Name) AND (ORD.Date = T_Stats_Top_Amer_by_Area.Date) " & vbCrLf
+    sSQL = sSQL & "GROUP BY ORD.Tri, T_Stats_Top_Amer_by_Area.Date, T_Stats_Top_Amer_by_Area.Managing_Short_Name, T_Stats_Top_Amer_by_Area.Area " & vbCrLf
+    sSQL = sSQL & "ORDER BY ORD.Tri DESC"
+    
+    
+    'Set rstSource = bd.OpenRecordset("Select * from Q_Stats_Globales_By_Area_and_Managing_Amer where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#")
+    Set rstSource = bd.OpenRecordset(sSQL)
+    
+    'initialisation des variables
+    iRefLine = 4
+    iRefCol = 2
+    sManaging = ""
+    
+    rstSource.MoveFirst
+    Do While Not rstSource.EOF
+        If rstSource![Managing_Short_Name].Value <> sManaging Then
+            sManaging = rstSource![Managing_Short_Name].Value
+                'Détermination du range à fusionner pour afficher les stats globales (pas par produit)
+                iRefDebutRange = iRefLine
+                Set rstSource2 = bd.OpenRecordset("Select * from Q_Stats_Globales_By_Area_and_Managing_Amer where [Managing_Short_Name]=""" & sManaging & """ and [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#")
+                rstSource2.MoveLast
+                iRefFinRange = iRefLine + rstSource2.RecordCount - 1
+                Set rstSource2 = Nothing
+                
+            'Rajout d'une ligne de séparation entre les entités
+            WsStatByCountry.Activate
+            WsStatByCountry.Range(Cells(iRefFinRange, 2), Cells(iRefFinRange, 19)).Select ' Borders (xlEdgeBottom)
+            With Selection.Borders(xlEdgeBottom)
+                .LineStyle = xlContinuous
+                .ColorIndex = 0
+                .TintAndShade = 0
+                .ThemeColor = 6
+                .Weight = xlThin
+            End With
+            WsStatByCountry.Range(Cells(iRefLine, iRefCol), Cells(iRefLine, iRefCol)).Select
+            
+            'A merger
+             WsStatByCountry.Cells(iRefLine, iRefCol).Value = rstSource![Managing_Short_Name].Value
+                'Merge des cellules globales
+                WsStatByCountry.Range(Cells(iRefDebutRange, iRefCol), Cells(iRefFinRange, iRefCol)).Merge
+                With Selection
+                    .HorizontalAlignment = xlCenter
+                    .VerticalAlignment = xlCenter
+                    .WrapText = True
+                    .MergeCells = True
+                End With
+                'Première ligne sur le short name
+                WsStatByCountry.Cells(iRefLine, iRefCol + 1).Value = rstSource![Area].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 2).Value = rstSource![Volume_Total].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 3).Value = rstSource![Volume_No_Conf].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 4).Value = rstSource![Volume_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 5).Value = rstSource![Dont_Volume_MW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 6).Value = rstSource![Dont_Volume_DTCC].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 7).Value = rstSource![Dont_Volume_SW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 8).Value = rstSource![Volume_No_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 9).Value = rstSource![Volume_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 10).Value = rstSource![Volume_No_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 11).Value = rstSource![Volume_MCA_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 12).Value = rstSource![Volume_MW_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 13).Value = rstSource![Volume_MW_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 14).Value = rstSource![Volume_MCA_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 15).Value = rstSource![Volume_MCA_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 16).Value = rstSource![Volume_MW_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 17).Value = rstSource![Volume_Electro_Undefined].Value
+            
+            Else
+                'pour les autres lignes sur le même short name
+                WsStatByCountry.Cells(iRefLine, iRefCol + 1).Value = rstSource![Area].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 2).Value = rstSource![Volume_Total].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 3).Value = rstSource![Volume_No_Conf].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 4).Value = rstSource![Volume_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 5).Value = rstSource![Dont_Volume_MW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 6).Value = rstSource![Dont_Volume_DTCC].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 7).Value = rstSource![Dont_Volume_SW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 8).Value = rstSource![Volume_No_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 9).Value = rstSource![Volume_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 10).Value = rstSource![Volume_No_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 11).Value = rstSource![Volume_MCA_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 12).Value = rstSource![Volume_MW_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 13).Value = rstSource![Volume_MW_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 14).Value = rstSource![Volume_MCA_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 15).Value = rstSource![Volume_MCA_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 16).Value = rstSource![Volume_MW_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 17).Value = rstSource![Volume_Electro_Undefined].Value
+            
+            
+            End If
+    rstSource.MoveNext
+    iRefLine = iRefLine + 1
+    Loop
+    WsStatByCountry.Cells(1, 1).Select
+    
+    'Export du suivi
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Export du reporting Amer by Country..."
+    Application.ScreenUpdating = False
+    
+    
+    WsStatByCountry.Copy after:=xlBook.Sheets(2)
+    'xlBook.Sheets(3).Name = "Volume Amer last 6 months"
+    xlBook.ActiveSheet.Name = "Volume Amer last 6 months"
+    xlBook.ActiveSheet.Cells.EntireRow.AutoFit
+    xlBook.ActiveSheet.Range("A1").Select
+    
+    WsStatByCountry.Activate
+    If iRefLine <= 4 Then WsStatByCountry.Rows("4:2500").Delete shift:=xlUp Else WsStatByCountry.Rows("4:" & iRefLine).Delete shift:=xlUp
+    
+    'Génération du report Asie
+    WsStatByCountry.Visible = True
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Construction du reporting Asie par Country..."
+    Application.ScreenUpdating = False
+    
+    sSQL = ""
+    sSQL = sSQL & "SELECT T_Stats_Top_Asie_by_Area.Date, T_Stats_Top_Asie_by_Area.Managing_Short_Name, T_Stats_Top_Asie_by_Area.Area, Sum(T_Stats_Top_Asie_by_Area.Volume_Total) AS Volume_Total, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_No_Conf) AS Volume_No_Conf, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_No_Electro) AS Volume_No_Electro, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_Electro) AS Volume_Electro, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Dont_Volume_MW) AS Dont_Volume_MW, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Dont_Volume_DTCC) AS Dont_Volume_DTCC, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Dont_Volume_SW) AS Dont_Volume_SW, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_MCA) AS Volume_MCA, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_No_MCA) AS Volume_No_MCA, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_MCA_Eli) AS Volume_MCA_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_MW_Eli) AS Volume_MW_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_MW_No_Eli) AS Volume_MW_No_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_MCA_No_Eli) AS Volume_MCA_No_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_MCA_Eli_Vide) AS Volume_MCA_Eli_Vide, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_MW_Eli_Vide) AS Volume_MW_Eli_Vide, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Asie_by_Area.Volume_Electro_Undefined) AS Volume_Electro_Undefined " & vbCrLf
+    sSQL = sSQL & vbCrLf
+    sSQL = sSQL & "FROM (" & vbCrLf
+    sSQL = sSQL & "      SELECT S.Date, Sum(S.Volume_MCA) AS Tri, " & vbCrLf
+    sSQL = sSQL & "      S.Managing_Short_Name " & vbCrLf
+    sSQL = sSQL & "      FROM Q_Date_Report AS D " & vbCrLf
+    sSQL = sSQL & "      " & vbCrLf
+    sSQL = sSQL & "      INNER " & vbCrLf
+    sSQL = sSQL & "      JOIN T_Stats_Top_Asie_by_Area AS S " & vbCrLf
+    sSQL = sSQL & "      " & vbCrLf
+    sSQL = sSQL & "      ON D.Date_Report=S.Date " & vbCrLf
+    sSQL = sSQL & "      GROUP BY S.Date, S.Managing_Short_Name) AS ORD " & vbCrLf
+    sSQL = sSQL & vbCrLf
+    sSQL = sSQL & "INNER " & vbCrLf
+    sSQL = sSQL & "JOIN T_Stats_Top_Asie_by_Area " & vbCrLf
+    sSQL = sSQL & "ON (ORD.Date=T_Stats_Top_Asie_by_Area.Date) AND (ORD.Managing_Short_Name=T_Stats_Top_Asie_by_Area.Managing_Short_Name) " & vbCrLf
+    sSQL = sSQL & "GROUP BY ORD.Tri, T_Stats_Top_Asie_by_Area.Date, T_Stats_Top_Asie_by_Area.Managing_Short_Name, T_Stats_Top_Asie_by_Area.Area " & vbCrLf
+    sSQL = sSQL & "ORDER BY ORD.Tri DESC"
+    
+    'Set rstSource = bd.OpenRecordset("Select * from Q_Stats_Globales_By_Area_and_Managing_Asie where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#")
+    Set rstSource = bd.OpenRecordset(sSQL)
+    
+    'initialisation des variables
+    iRefLine = 4
+    iRefCol = 2
+    sManaging = ""
+    
+    rstSource.MoveFirst
+    Do While Not rstSource.EOF
+        If rstSource![Managing_Short_Name].Value <> sManaging Then
+            sManaging = rstSource![Managing_Short_Name].Value
+                'Détermination du range à fusionner pour afficher les stats globales (pas par produit)
+                iRefDebutRange = iRefLine
+                Set rstSource2 = bd.OpenRecordset("Select * from Q_Stats_Globales_By_Area_and_Managing_Asie where [Managing_Short_Name]=""" & sManaging & """ and [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#")
+                rstSource2.MoveLast
+                iRefFinRange = iRefLine + rstSource2.RecordCount - 1
+                Set rstSource2 = Nothing
+                
+            'Rajout d'une ligne de séparation entre les entités
+            WsStatByCountry.Activate
+            WsStatByCountry.Range(Cells(iRefFinRange, 2), Cells(iRefFinRange, 19)).Select ' Borders (xlEdgeBottom)
+            With Selection.Borders(xlEdgeBottom)
+                .LineStyle = xlContinuous
+                .ColorIndex = 0
+                .TintAndShade = 0
+                .ThemeColor = 6
+                .Weight = xlThin
+            End With
+            WsStatByCountry.Range(Cells(iRefLine, iRefCol), Cells(iRefLine, iRefCol)).Select
+            
+            'A merger
+             WsStatByCountry.Cells(iRefLine, iRefCol).Value = sManaging
+                'Merge des cellules globales
+                WsStatByCountry.Range(Cells(iRefDebutRange, iRefCol), Cells(iRefFinRange, iRefCol)).Merge
+                With Selection
+                    .HorizontalAlignment = xlCenter
+                    .VerticalAlignment = xlCenter
+                    .WrapText = True
+                    .MergeCells = True
+                End With
+            'Première ligne sur le short name
+                WsStatByCountry.Cells(iRefLine, iRefCol + 1).Value = rstSource![Area].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 2).Value = rstSource![Volume_Total].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 3).Value = rstSource![Volume_No_Conf].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 4).Value = rstSource![Volume_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 5).Value = rstSource![Dont_Volume_MW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 6).Value = rstSource![Dont_Volume_DTCC].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 7).Value = rstSource![Dont_Volume_SW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 8).Value = rstSource![Volume_No_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 9).Value = rstSource![Volume_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 10).Value = rstSource![Volume_No_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 11).Value = rstSource![Volume_MCA_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 12).Value = rstSource![Volume_MW_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 13).Value = rstSource![Volume_MW_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 14).Value = rstSource![Volume_MCA_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 15).Value = rstSource![Volume_MCA_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 16).Value = rstSource![Volume_MW_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 17).Value = rstSource![Volume_Electro_Undefined].Value
+
+        Else
+            'les autres lignes sur le short name
+                WsStatByCountry.Cells(iRefLine, iRefCol + 1).Value = rstSource![Area].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 2).Value = rstSource![Volume_Total].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 3).Value = rstSource![Volume_No_Conf].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 4).Value = rstSource![Volume_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 5).Value = rstSource![Dont_Volume_MW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 6).Value = rstSource![Dont_Volume_DTCC].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 7).Value = rstSource![Dont_Volume_SW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 8).Value = rstSource![Volume_No_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 9).Value = rstSource![Volume_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 10).Value = rstSource![Volume_No_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 11).Value = rstSource![Volume_MCA_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 12).Value = rstSource![Volume_MW_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 13).Value = rstSource![Volume_MW_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 14).Value = rstSource![Volume_MCA_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 15).Value = rstSource![Volume_MCA_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 16).Value = rstSource![Volume_MW_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 17).Value = rstSource![Volume_Electro_Undefined].Value
+            
+        End If
+    rstSource.MoveNext
+    iRefLine = iRefLine + 1
+    Loop
+    WsStatByCountry.Cells(1, 1).Select
+    
+    'Export du suivi
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Export du reporting Asie by Area..."
+    Application.ScreenUpdating = False
+    
+    WsStatByCountry.Copy after:=xlBook.Sheets(3)
+    xlBook.ActiveSheet.Name = "Volume Asia by Area"
+    xlBook.ActiveSheet.Cells.EntireRow.AutoFit
+    xlBook.ActiveSheet.Range("A1").Select
+    
+    WsStatByCountry.Activate
+    If iRefLine <= 4 Then WsStatByCountry.Rows("4:2500").Delete shift:=xlUp Else WsStatByCountry.Rows("4:" & iRefLine).Delete shift:=xlUp
+    
+        'Génération du report Europe
+    WsStatByCountry.Visible = True
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Construction du reporting Europe par Country..."
+    Application.ScreenUpdating = False
+    
+    'Set rstSource = bd.OpenRecordset("Select * from Q_Stats_Globales_By_Area_and_Managing_Europe where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#")
+    
+    
+    sSQL = ""
+    sSQL = sSQL & "SELECT T_Stats_Top_Europe_by_Area.Date, T_Stats_Top_Europe_by_Area.Managing_Short_Name, T_Stats_Top_Europe_by_Area.Area, Sum(T_Stats_Top_Europe_by_Area.Volume_Total) AS Volume_Total, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_No_Conf) AS Volume_No_Conf, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_No_Electro) AS Volume_No_Electro, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_Electro) AS Volume_Electro, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Dont_Volume_MW) AS Dont_Volume_MW, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Dont_Volume_DTCC) AS Dont_Volume_DTCC, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Dont_Volume_SW) AS Dont_Volume_SW, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_MCA) AS Volume_MCA, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_No_MCA) AS Volume_No_MCA, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_MCA_Eli) AS Volume_MCA_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_MW_Eli) AS Volume_MW_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_MW_No_Eli) AS Volume_MW_No_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_MCA_No_Eli) AS Volume_MCA_No_Eli, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_MCA_Eli_Vide) AS Volume_MCA_Eli_Vide, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_MW_Eli_Vide) AS Volume_MW_Eli_Vide, " & vbCrLf
+    sSQL = sSQL & "Sum(T_Stats_Top_Europe_by_Area.Volume_Electro_Undefined) AS Volume_Electro_Undefined " & vbCrLf
+    sSQL = sSQL & vbCrLf
+    sSQL = sSQL & "FROM (" & vbCrLf
+    sSQL = sSQL & "      SELECT S.Date, sum(S.Volume_MCA) AS Tri, " & vbCrLf
+    sSQL = sSQL & "      S.Managing_Short_Name " & vbCrLf
+    sSQL = sSQL & "      FROM Q_Date_Report AS D " & vbCrLf
+    sSQL = sSQL & "      " & vbCrLf
+    sSQL = sSQL & "      INNER " & vbCrLf
+    sSQL = sSQL & "      JOIN T_Stats_Top_Europe_by_Area AS S " & vbCrLf
+    sSQL = sSQL & "      " & vbCrLf
+    sSQL = sSQL & "      ON D.Date_Report = S.Date " & vbCrLf
+    sSQL = sSQL & "      GROUP BY S.Date, S.Managing_Short_Name ) AS ORD " & vbCrLf
+    sSQL = sSQL & vbCrLf
+    sSQL = sSQL & "INNER " & vbCrLf
+    sSQL = sSQL & "JOIN T_Stats_Top_Europe_by_Area " & vbCrLf
+    sSQL = sSQL & "ON (ORD.Managing_Short_Name = T_Stats_Top_Europe_by_Area.Managing_Short_Name) AND (ORD.Date = T_Stats_Top_Europe_by_Area.Date) " & vbCrLf
+    sSQL = sSQL & "GROUP BY ORD.Tri, T_Stats_Top_Europe_by_Area.Date, T_Stats_Top_Europe_by_Area.Managing_Short_Name, T_Stats_Top_Europe_by_Area.Area " & vbCrLf
+    sSQL = sSQL & "ORDER BY ORD.Tri DESC"
+    
+    Set rstSource = bd.OpenRecordset(sSQL)
+    
+    'initialisation des variables
+    iRefLine = 4
+    iRefCol = 2
+    sManaging = ""
+    
+    rstSource.MoveFirst
+    Do While Not rstSource.EOF
+        If rstSource![Managing_Short_Name].Value <> sManaging Then
+            sManaging = rstSource![Managing_Short_Name].Value
+                'Détermination du range à fusionner pour afficher les stats globales (pas par produit)
+                iRefDebutRange = iRefLine
+                Set rstSource2 = bd.OpenRecordset("Select * from Q_Stats_Globales_By_Area_and_Managing_Europe where [Managing_Short_Name]=""" & sManaging & """ and [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#")
+                rstSource2.MoveLast
+                iRefFinRange = iRefLine + rstSource2.RecordCount - 1
+                Set rstSource2 = Nothing
+                
+            'Rajout d'une ligne de séparation entre les entités
+            WsStatByCountry.Activate
+            WsStatByCountry.Range(Cells(iRefFinRange, 2), Cells(iRefFinRange, 19)).Select ' Borders (xlEdgeBottom)
+            With Selection.Borders(xlEdgeBottom)
+                .LineStyle = xlContinuous
+                .ColorIndex = 0
+                .TintAndShade = 0
+                .ThemeColor = 6
+                .Weight = xlThin
+            End With
+            WsStatByCountry.Range(Cells(iRefLine, iRefCol), Cells(iRefLine, iRefCol)).Select
+            
+            '******************************************
+            '********************************************
+            'A merger
+             'If z = 10000 Then
+             WsStatByCountry.Cells(iRefLine, iRefCol).Value = sManaging
+                'Merge des cellules globales
+                WsStatByCountry.Range(Cells(iRefDebutRange, iRefCol), Cells(iRefFinRange, iRefCol)).Merge
+                With Selection
+                    .HorizontalAlignment = xlCenter
+                    .VerticalAlignment = xlCenter
+                    .WrapText = True
+                    .MergeCells = True
+                End With
+            'End If
+            'Première ligne sur le short name
+                WsStatByCountry.Cells(iRefLine, iRefCol + 1).Value = rstSource![Area].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 2).Value = rstSource![Volume_Total].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 3).Value = rstSource![Volume_No_Conf].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 4).Value = rstSource![Volume_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 5).Value = rstSource![Dont_Volume_MW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 6).Value = rstSource![Dont_Volume_DTCC].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 7).Value = rstSource![Dont_Volume_SW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 8).Value = rstSource![Volume_No_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 9).Value = rstSource![Volume_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 10).Value = rstSource![Volume_No_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 11).Value = rstSource![Volume_MCA_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 12).Value = rstSource![Volume_MW_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 13).Value = rstSource![Volume_MW_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 14).Value = rstSource![Volume_MCA_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 15).Value = rstSource![Volume_MCA_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 16).Value = rstSource![Volume_MW_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 17).Value = rstSource![Volume_Electro_Undefined].Value
+
+        Else
+            'les autres lignes sur le short name
+                WsStatByCountry.Cells(iRefLine, iRefCol + 1).Value = rstSource![Area].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 2).Value = rstSource![Volume_Total].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 3).Value = rstSource![Volume_No_Conf].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 4).Value = rstSource![Volume_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 5).Value = rstSource![Dont_Volume_MW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 6).Value = rstSource![Dont_Volume_DTCC].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 7).Value = rstSource![Dont_Volume_SW].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 8).Value = rstSource![Volume_No_Electro].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 9).Value = rstSource![Volume_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 10).Value = rstSource![Volume_No_MCA].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 11).Value = rstSource![Volume_MCA_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 12).Value = rstSource![Volume_MW_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 13).Value = rstSource![Volume_MW_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 14).Value = rstSource![Volume_MCA_No_Eli].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 15).Value = rstSource![Volume_MCA_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 16).Value = rstSource![Volume_MW_Eli_Vide].Value
+                WsStatByCountry.Cells(iRefLine, iRefCol + 17).Value = rstSource![Volume_Electro_Undefined].Value
+            
+        End If
+    rstSource.MoveNext
+    iRefLine = iRefLine + 1
+    Loop
+    WsStatByCountry.Cells(1, 1).Select
+    
+    'Export du suivi
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Export du reporting Asie by Area..."
+    Application.ScreenUpdating = False
+    
+    WsStatByCountry.Copy after:=xlBook.Sheets(3)
+    xlBook.ActiveSheet.Name = "Volume Europe by Area"
+    xlBook.ActiveSheet.Cells.EntireRow.AutoFit
+    xlBook.ActiveSheet.Range("A1").Select
+    ActiveWindow.TabRatio = 0.73
+    ActiveWindow.ScrollWorkbookTabs Position:=xlFirst
+    xlBook.Sheets("Volume by Area last 6 months").Select
+    Range("B2").Select
+       
+    xlBook.Close True
+      
+    WkMacro.Activate
+    WsStatByCountry.Activate
+    If iRefLine <= 4 Then WsStatByCountry.Rows("4:2500").Delete shift:=xlUp Else WsStatByCountry.Rows("4:" & iRefLine).Delete shift:=xlUp
+    
+    WsStatByCountry.Range("A7").Select
+    
+    Set xlBook = Nothing
+End Function
+Public Function GenWeeklySteerco(sSource As String, sContinent As String)
+    Dim WkMacro As Workbook
+    Dim bd As Database
+    Dim rst As Recordset
+        
+    Dim FileTemp As String
+    Dim sFicReport As String
+    
+    Dim rstSource As Recordset
+    Dim rstSource2 As Recordset
+    Dim rstSource3 As Recordset
+    Dim rstSource4 As Recordset
+    Dim MaDate As Date
+    Dim sManaging As String
+    Dim sClient As String
+    Dim sTestChangeManaging As String
+    Dim sSales As String
+       
+    Dim i As Integer
+    Dim z As Integer
+    Dim iNbRec As Integer
+    Dim iNbClient As Integer
+    Dim iNbLineClient As Integer
+    Dim iTotalGeoZone As Integer
+    Dim sTotalManagingFormule As String
+    Dim iTotal6M As Double
+    
+    Dim xlBook As Excel.Workbook
+    Dim xlSheet As Excel.Worksheet
+    
+    Dim iRefLine As Integer
+    Dim iRefCol As Integer
+    Dim iRefDebutRange As Integer
+    Dim iRefFinRange As Integer
+    Dim iRefDebutRangeClient As Integer
+    Dim iRefFinRangeClient As Integer
+    
+    Dim j As Integer
+    
+    Set WkMacro = ThisWorkbook
+    
+    Set bd = OpenDatabase(WsSettings.[path_database].Offset(0, 1).Value)
+    Set rstSource4 = bd.OpenRecordset("Select max([Date]) from " & sSource) '
+    MaDate = rstSource4.Fields(0).Value
+    
+    '*************************************************
+    '*************************************************
+    ' Ouvrir le fichier Template
+    '*************************************************
+    
+    'Récupération du total de deals par Area
+     Select Case Trim(sContinent)
+        Case "Amer"
+            Set rstSource3 = bd.OpenRecordset("Select sum([Volume_Total]) from T_Stats_Globales_By_Area where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# and [Area]='" & sContinent & "'")
+        Case "Asie"
+            Set rstSource3 = bd.OpenRecordset("Select sum([Volume_Total]) from T_Stats_Globales_By_Area where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# and [Area]='Asia'")
+        Case "Europe", "EUR"
+            Set rstSource3 = bd.OpenRecordset("Select sum([Volume_Total]) from T_Stats_Globales_By_Area where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# and [Area]='EUR'")
+    End Select
+    iTotalGeoZone = rstSource3.Fields(0).Value
+    Set rstSource3 = Nothing
+    
+    'If sContinent = "Amer" Then
+    '    Set rstSource = bd.OpenRecordset("Select * from " & sSource & " where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# order by [Managing_Short_Name]")
+    'If sContinent = "Asie" Then Set rstSource = bd.OpenRecordset("Select * from " & sSource & " where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# order by [Short_Name_Client]")
+    
+    'initialisation des variables
+    iRefLine = 7
+    iRefCol = 2
+    iRefDebutRange = 0
+    iRefFinRange = 0
+    iNbClient = 0
+    iNbLineClient = 0
+    iRefDebutRangeClient = 0
+    iRefFinRangeClient = 0
+    sTotalManagingFormule = ""
+    
+    sManaging = ""
+    sClient = ""
+    sTestChangeManaging = ""
+    
+    Set xlBook = Workbooks.Open(WsSettings.[Path_Template_Weekly].Offset(0, 1).Value & "Template_Steerco.xlsm")
+    
+    Set xlSheet = xlBook.Worksheets("Report SteerCo")
+    
+    Application.Visible = True
+    
+    Set rstSource = bd.OpenRecordset("Select distinct [Managing_Short_Name] from " & sSource & " where [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "# order by [Managing_Short_Name]")
+    rstSource.MoveFirst
+    Do While Not rstSource.EOF
+        Set rstSource3 = bd.OpenRecordset("Select * from T_Liste_Short_Name_Managing_et_Client where [Managing_Short_Name]=""" & rstSource.Fields(0).Value & """")
+        rstSource3.MoveLast
+        iNbRec = rstSource3.RecordCount
+        rstSource3.MoveFirst
+            sSales = ""
+            sClient = ""
+            For j = 0 To iNbRec - 1
+                If Not IsNull(rstSource3![sales]) And (rstSource3![sales] <> "") Then
+                    If InStr(sSales, rstSource3![sales]) = 0 Or InStr(sSales, rstSource3![sales]) = 0 Then
+                        sSales = sSales & rstSource3![sales] & ","
+                    End If
+                End If
+                If Not IsNull(rstSource3![Short_Name_Client]) And (rstSource3![Short_Name_Client] <> "") Then
+                    If InStr(sClient, rstSource3![Short_Name_Client]) = 0 Or InStr(sClient, rstSource3![Short_Name_Client]) = 0 Then
+                        sClient = sClient & rstSource3![Short_Name_Client] & ","
+                    End If
+                End If
+            rstSource3.MoveNext
+            Next j
+        
+        If Right(sSales, 1) = "," Then sSales = Left(sSales, Len(sSales) - 1)
+        If Right(sClient, 1) = "," Then sClient = Left(sClient, Len(sClient) - 1)
+        
+        Set rstSource3 = bd.OpenRecordset("Select * from " & sSource & " where [Managing_Short_Name]=""" & rstSource.Fields(0).Value & """ and [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#")
+        rstSource3.MoveLast
+        iNbRec = rstSource3.RecordCount
+        rstSource3.MoveFirst
+
+            For j = 0 To iNbRec - 1
+                
+                sTestChangeManaging = ""
+    
+                If rstSource.Fields(0).Value <> sManaging Then sTestChangeManaging = "nouveau" Else sTestChangeManaging = "pas nouveau"
+                       
+                'Cas nouvelle ligne de managing
+                If sTestChangeManaging = "nouveau" Then 'Traitement si l'on arrive sur une nouvelle managing
+                            sTotalManagingFormule = ""
+                            sManaging = rstSource.Fields(0).Value
+                            
+                            'Détermination du range à fusionner pour afficher les stats globales (pas par produit)
+                            iRefDebutRange = iRefLine
+                            iRefDebutRangeClient = iRefLine
+                            Set rstSource2 = bd.OpenRecordset("Select * from " & sSource & " where [Managing_Short_Name]=""" & sManaging & """ and [Date]=#" & Format((MaDate), "mm/dd/yyyy") & "#") ' GROUP BY " & sSource4 & ".[Managing_Short_Name], " & sSource4 & ".[Products]")
+                            rstSource2.MoveLast
+                            iRefFinRange = iRefLine + rstSource2.RecordCount - 1
+                            Set rstSource2 = Nothing
+                            
+                'Formatage au niveau de la managing
+                        'Rajout d'une ligne de séparation entre les Managing
+                        xlBook.Activate
+                        xlSheet.Range(Cells(iRefFinRange, 2), Cells(iRefFinRange, 21)).Select
+                            With Selection.Borders(xlEdgeBottom)
+                                .LineStyle = xlContinuous
+                                .ColorIndex = 0
+                                .TintAndShade = 0
+                                .ThemeColor = 6
+                                .Weight = xlThin
+                            End With
+                        xlSheet.Range(Cells(iRefLine, iRefCol), Cells(iRefLine, iRefCol)).Select
+                        
+                        'Rajout d'une ligne de total pour la managing
+                        xlBook.Activate
+                        xlSheet.Activate
+                        For z = 6 To 17 Step 1
+                            If iRefLine - iRefFinRange < 0 Then 'Cas d'une somme qui correspond à une seule ligne
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).Select
+                                ActiveCell.FormulaR1C1 = "=SUM(R[" & iRefLine - iRefFinRange - 1 & "]C:R[-1]C)"
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).Select
+                                With Selection.Font
+                                    .Bold = True
+                                    .ThemeColor = xlThemeColorLight1
+                                    .TintAndShade = 0
+                                End With
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).FormatConditions.Delete
+                            Else
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).Select
+                                ActiveCell.FormulaR1C1 = "=R[-1]C"
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).Select
+                                With Selection.Font
+                                    .Bold = True
+                                    .ThemeColor = xlThemeColorLight1
+                                    .TintAndShade = 0
+                                End With
+                                xlSheet.Range(Cells(iRefFinRange + 1, z), Cells(iRefFinRange + 1, z)).FormatConditions.Delete
+                            End If
+                        Next z
+                        
+                        'Rajout d'une ligne de séparation entre les managing
+                        xlBook.Activate
+                        xlSheet.Activate
+                        xlSheet.Range(Cells(iRefFinRange + 1, 2), Cells(iRefFinRange + 1, 21)).Select
+                            With Selection.Borders(xlEdgeBottom)
+                                .LineStyle = xlContinuous
+                                .ColorIndex = 0
+                                .TintAndShade = 0
+                                .ThemeColor = 6
+                                .Weight = xlThin
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                        xlSheet.Range(Cells(iRefLine, iRefCol), Cells(iRefLine, iRefCol)).Select
+                
+                ' Alimentation des valeurs globales au niveau du client (mergées)
+                    Set rstSource4 = bd.OpenRecordset("Select sum([Volume Equivalent Paper]) from " & sSource & " where [Managing_Short_Name]=""" & sManaging & """")
+                    iTotal6M = rstSource4.Fields(0).Value
+                    Set rstSource4 = Nothing
+                    
+                        xlSheet.Cells(iRefLine, iRefCol).Value = sManaging
+                        xlSheet.Cells(iRefLine, iRefCol + 1).Value = sClient
+                        xlSheet.Cells(iRefLine, iRefCol + 2).Value = sSales
+                        
+                            'Merge des cellules globales (tirées du Report MCA, l'extraction Monaco)
+                            'Au niveau de la managing
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol), Cells(iRefFinRange + 1, iRefCol)).Merge
+                            With Selection
+                                .HorizontalAlignment = xlGeneral
+                                .HorizontalAlignment = xlCenter
+                                .VerticalAlignment = xlCenter
+                                .WrapText = True
+                                .MergeCells = True
+                            End With
+                           
+                           'Déco
+                            With Selection.Borders
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                            
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 1), Cells(iRefFinRange, iRefCol + 1)).Select
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 1), Cells(iRefFinRange, iRefCol + 1)).Merge
+                            'Selection.Merge
+                            With Selection
+                                .HorizontalAlignment = xlCenter
+                                .VerticalAlignment = xlCenter
+                                .WrapText = True
+                                .MergeCells = True
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+    
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 2), Cells(iRefFinRange, iRefCol + 2)).Select
+                            xlSheet.Range(Cells(iRefDebutRange, iRefCol + 2), Cells(iRefFinRange, iRefCol + 2)).Merge
+                            'Selection.Merge
+                            With Selection
+                                .HorizontalAlignment = xlCenter
+                                .VerticalAlignment = xlCenter
+                                .WrapText = True
+                                .MergeCells = True
+                            End With
+                            With Selection.Borders(xlEdgeRight)
+                                .LineStyle = xlContinuous
+                                .ThemeColor = 6
+                                .TintAndShade = 0
+                                .Weight = xlThin
+                            End With
+                            
+                            
+                    End If
+                    
+                     'Traitement si l'on reste sur le même client (et eventuellement la même managing
+                        'A ne pas merger
+                            xlSheet.Cells(iRefLine, iRefCol + 3).Value = rstSource3![Products].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 4).Value = rstSource3![Volume Equivalent Paper]
+                            xlSheet.Cells(iRefLine, iRefCol + 5).Value = rstSource3![Volume Electro]
+                            xlSheet.Cells(iRefLine, iRefCol + 6).Value = rstSource3![Volume MW Since].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 7).Value = rstSource3![Volume MW YtD].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 8).Value = rstSource3![Volume No Electro].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 9).Value = rstSource3![Volume MCA Since].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 10).Value = rstSource3![Volume MCA YtD].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 11).Value = rstSource3![Volume MCA In Progress].Value 'pour eligible
+                            xlSheet.Cells(iRefLine, iRefCol + 12).Value = rstSource3![Volume MCA In Progress].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 13).Value = rstSource3![Volume MCA No Eligible].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 14).Value = rstSource3![Volume MW In Progress].Value
+                            xlSheet.Cells(iRefLine, iRefCol + 15).Value = rstSource3![Volume No Eligible MW].Value
+                            
+                    'If iRefFinRange - iRefLine = 1 Then 'nous arrivons à la dernière ligne du dernier client
+                    '    iRefLine = iRefLine + 2
+                    'Else
+                        iRefLine = iRefLine + 1
+                    'End If
+            rstSource3.MoveNext
+            Next j
+    iRefLine = iRefLine + 1
+    rstSource.MoveNext
+    'Attention si on arrive à la fin de liste attachée à la managing, il faut sauter la ligne des totaux
+            'If iRefFinRange - iRefLine = 1 Then 'nous arrivons à la dernière ligne du dernier client
+            '    iRefLine = iRefLine + 2
+            'Else
+            '    iRefLine = iRefLine + 1
+            'End If
+    Loop
+    
+     
+     'Export du suivi
+    Application.ScreenUpdating = True
+    Application.StatusBar = "Export du reporting " & sContinent & "..."
+    Application.ScreenUpdating = False
+    
+    WkMacro.Activate
+    FileTemp = WsSettings.[Path_Output_Folder].Offset(0, 1).Value
+        If Right(FileTemp, 1) <> "\" Then FileTemp = FileTemp & "\"
+    
+    sFicReport = FileTemp & Year(MaDate) & "-" & Month(MaDate) & "-" & Day(MaDate) & "_Suivi Steerco " & sContinent & " MCA " & ".xlsm"
+    
+    If CheckFileExist(sFicReport, False) Then Kill sFicReport
+    
+    'Set WkMacro = Application.Workbooks("Macro_Report_MCA_V10.xlsm")
+    'WkMacro.Activate
+    'xlsheet.Copy 'Destination:=xlApp.Workbooks(xlBook.Name).Worksheets(xlSheet.Name)
+    xlBook.Activate
+    'Set xlBook = ActiveWorkbook
+    xlBook.SaveAs Filename:=sFicReport, FileFormat:=xlOpenXMLWorkbookMacroEnabled, CreateBackup:=False
+    'Set xlBook = ActiveWorkbook
+    xlBook.Sheets(1).Rows("1:4").ClearContents
+    xlBook.Sheets(1).Range("1:1,3:5").Select
+    xlBook.Sheets(1).Range("B3").Activate
+    Selection.EntireRow.Hidden = True
+    xlBook.Sheets(1).Range("C7").Select
+    
+    xlBook.Sheets(1).Range(Cells(7, 2), Cells(iRefLine, 26)).Select
+        Selection.Borders(xlEdgeTop).LineStyle = xlNone
+        Selection.Borders(xlEdgeBottom).LineStyle = xlNone
+        With Selection.Borders(xlEdgeRight)
+            .LineStyle = xlContinuous
+            .ThemeColor = 6
+            .TintAndShade = 0
+            .Weight = xlMedium
+        End With
+        With Selection.Borders(xlInsideVertical)
+            .LineStyle = xlContinuous
+            .ThemeColor = 6
+            .TintAndShade = 0
+            .Weight = xlThin
+        End With
+    xlBook.Sheets(1).Cells.EntireRow.AutoFit
+    xlBook.Sheets(1).Range("B1").Select
+    
+    
+    'Export des données pour le double-click
+        'WsAnalyseMCA.Activate
+        Set rst = bd.OpenRecordset("SELECT * from T_Analyse_MCA")
+        xlBook.Activate
+        
+        If xlBook.Sheets("Analyse_MCA").ListObjects("Table_Analyse_MCA").ListRows.Count > 0 Then
+            xlBook.Sheets("Analyse_MCA").ListObjects("Table_Analyse_MCA").DataBodyRange.Delete
+        End If
+        
+        xlBook.Sheets("Analyse_MCA").Range("A2").CopyFromRecordset rst
+        xlBook.Sheets("Analyse_MCA").Cells.EntireColumn.AutoFit
+        rst.Close
+        
+        xlBook.Sheets("Analyse_MCA").Visible = True
+        xlBook.Sheets("Analyse_MCA").Activate
+        xlBook.Sheets("Analyse_MCA").Range("A1").Select
+        Columns("A:A").Select
+        xlBook.Sheets("Analyse_MCA").Range(Selection, Selection.End(xlToRight)).Select
+        Selection.ColumnWidth = 74.14
+        xlBook.Sheets("Analyse_MCA").Columns("A:X").EntireColumn.AutoFit
+        xlBook.Sheets("Analyse_MCA").Cells.Select
+        xlBook.Sheets("Analyse_MCA").Cells.EntireRow.AutoFit
+        Sheets("Analyse_MCA").Select
+        Columns("J:J").Select
+        Selection.NumberFormat = "0"
+        Range("Table_Analyse_MCA[[#Headers],[Total]]").Select
+        xlBook.Sheets("Analyse_MCA").Range("A1").Select
+        
+        For i = 4 To 10
+            xlBook.Sheets("Analyse_MCA").Columns(i).NumberFormat = "0"
+        Next i
+        Sheets("Analyse_MCA").Visible = False
+        
+        xlBook.Sheets("Analyse_MCA").Visible = False
+    
+    xlBook.Sheets("Report Steerco").Select
+    'Mise à jour du Format
+    For i = 7 To 17
+    xlBook.Sheets(1).Columns(i).NumberFormat = "0"
+    Next i
+    Range("A7").Select
+    xlBook.Close True
+      
+    WkMacro.Activate
+    Range("A7").Select
+    
+        
+    Set xlBook = Nothing
+    
+    
+End Function
